@@ -20,3 +20,6 @@ Mac) or 2.5 deg (stronger headline result, needs a GPU allocation).
   starting value. Cause was the test, not the loop — the target was random
   noise, which a weight-sharing conv model cannot memorise regardless of
   training budget. Fixed by using a linear channel mixing as the target.
+
+- CI caught three type errors invisible on the dev machine;
+  mypy's python_version pin conflicted with 3.12 numpy stubs.
