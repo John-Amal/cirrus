@@ -41,7 +41,9 @@ def set_seed(seed: int) -> None:
         torch.cuda.manual_seed_all(seed)
 
 
-def make_synthetic_loaders(cfg: Config) -> tuple[DataLoader, DataLoader]:
+def make_synthetic_loaders(
+    cfg: Config,
+) -> tuple[DataLoader[tuple[torch.Tensor, ...]], DataLoader[tuple[torch.Tensor, ...]]]:
     """Random tensors shaped like ERA5 fields.
 
     The target is a fixed linear mixing of the input channels plus noise, so
@@ -69,7 +71,7 @@ def make_synthetic_loaders(cfg: Config) -> tuple[DataLoader, DataLoader]:
 
 def evaluate(
     model: nn.Module,
-    loader: DataLoader,
+    loader: DataLoader[tuple[torch.Tensor, ...]],
     loss_fn: nn.Module,
     device: torch.device,
 ) -> float:

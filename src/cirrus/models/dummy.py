@@ -33,7 +33,8 @@ class DummyModel(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Map ``(batch, channels, height, width)`` to the same shape."""
-        return self.net(x)
+        out: torch.Tensor = self.net(x)
+        return out
 
     @property
     def n_parameters(self) -> int:

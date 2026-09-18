@@ -46,7 +46,6 @@ ignore = ["D100", "D104", "D107", "D203", "D213"]
 "tests/*" = ["D103"]
 
 [tool.mypy]
-python_version = "3.11"
 strict = true
 warn_unreachable = true
 
