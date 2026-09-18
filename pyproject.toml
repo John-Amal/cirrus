@@ -10,6 +10,7 @@ keywords = ["machine-learning", "pytorch", "weather", "foundation-models", "era5
 
 dependencies = [
     "torch>=2.4",
+    "numpy>=1.26",
     "pyyaml>=6.0",
 ]
 

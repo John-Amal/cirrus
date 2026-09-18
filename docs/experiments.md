@@ -15,3 +15,8 @@ not work.
 
 Open question: first pretraining resolution — 5.625 deg (fits overnight on the
 Mac) or 2.5 deg (stronger headline result, needs a GPU allocation).
+
+- Overfit-one-batch test initially failed: loss plateaued at 25% of its
+  starting value. Cause was the test, not the loop — the target was random
+  noise, which a weight-sharing conv model cannot memorise regardless of
+  training budget. Fixed by using a linear channel mixing as the target.

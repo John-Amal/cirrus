@@ -40,9 +40,14 @@ def test_model_preserves_shape() -> None:
 def test_model_can_overfit_one_batch() -> None:
     """The single most useful test in machine learning.
 
-    A model with enough capacity must be able to drive the loss on one fixed
-    batch to near zero. If it cannot, something is wrong with the model, the
-    loss, or the optimiser — and no amount of data will save you.
+    Given a target the architecture can represent, the loop must drive the
+    loss on one fixed batch to near zero. If it cannot, the model, loss or
+    optimiser is broken and no amount of data will save you.
+
+    The target is a linear mixing of the input channels — well within the
+    capacity of two convolutions. Note what this test deliberately avoids:
+    an unrelated random target, which a weight-sharing conv model cannot
+    memorise no matter how long you train it.
     """
     torch.manual_seed(0)
     model = DummyModel(n_channels=2, hidden_dim=32)
@@ -50,10 +55,11 @@ def test_model_can_overfit_one_batch() -> None:
     loss_fn = torch.nn.MSELoss()
 
     x = torch.randn(4, 2, 16, 16)
-    y = torch.randn(4, 2, 16, 16)
+    mixing = torch.tensor([[0.8, -0.4], [0.3, 0.9]])
+    y = torch.einsum("bchw,cd->bdhw", x, mixing)
 
     first = loss_fn(model(x), y).item()
-    for _ in range(200):
+    for _ in range(400):
         optimiser.zero_grad()
         loss = loss_fn(model(x), y)
         loss.backward()
