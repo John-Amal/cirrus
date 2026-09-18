@@ -1,0 +1,23 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+dist/
+build/
+
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Never commit data or weights — they belong on Hugging Face or a data store
+data/
+checkpoints/
+*.zarr/
+*.nc
+*.pt
+*.ckpt
+
+wandb/
+.DS_Store
+.ipynb_checkpoints/
