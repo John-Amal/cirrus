@@ -8,10 +8,10 @@ something you can put in an experiment log.
 from __future__ import annotations
 
 import argparse
+import sys
 from pathlib import Path
 
 from cirrus.config import Config
-from cirrus.device import device_report, get_device
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -41,10 +41,49 @@ def main(argv: list[str] | None = None) -> int:
 
     subparsers.add_parser("device", help="report the detected device")
 
+    ingest_parser = subparsers.add_parser(
+        "ingest", help="download an ERA5 subset to a local zarr store"
+    )
+    ingest_parser.add_argument(
+        "--config",
+        type=Path,
+        default=Path("configs/data/era5_5625.yaml"),
+        help="path to the ingest spec",
+    )
+    ingest_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="validate the spec against the source and report size; download nothing",
+    )
+
     args = parser.parse_args(argv)
 
     if args.command == "device":
+        from cirrus.device import device_report, get_device
+
         print(device_report(get_device()))
+        return 0
+
+    if args.command == "ingest":
+        # Imported late: keeps `cirrus device` fast and torch-free paths light.
+        from cirrus.data.ingest import (
+            IngestSpec,
+            check_available,
+            describe,
+            ingest,
+            open_source,
+        )
+
+        try:
+            spec = IngestSpec.from_yaml(args.config)
+            source = open_source(spec.source)
+            check_available(source, spec)
+        except ValueError as err:
+            print(f"error: {err}", file=sys.stderr)
+            return 1
+        print(describe(source, spec))
+        if not args.dry_run:
+            ingest(spec, source=source)
         return 0
 
     from cirrus.train.loop import train  # imported late: torch is slow to load

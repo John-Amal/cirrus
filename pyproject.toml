@@ -12,6 +12,9 @@ dependencies = [
     "torch>=2.4",
     "numpy>=1.26",
     "pyyaml>=6.0",
+    "xarray>=2024.6",
+    "zarr>=2.18",
+    "gcsfs>=2024.6",  # anonymous reads from public Google Cloud buckets
 ]
 
 [project.optional-dependencies]
