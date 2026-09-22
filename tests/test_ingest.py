@@ -13,7 +13,13 @@ import numpy as np
 import pytest
 import xarray as xr
 
-from cirrus.data.ingest import IngestSpec, check_available, ingest, open_source
+from cirrus.data.ingest import (
+    IngestSpec,
+    check_available,
+    check_layout,
+    ingest,
+    open_source,
+)
 
 
 @pytest.fixture
@@ -24,7 +30,10 @@ def fake_source(tmp_path: Path) -> str:
         np.datetime64("2011-01-03T00"),
         np.timedelta64(6, "h"),
     ).astype("datetime64[ns]")
-    lat = np.linspace(87.1875, -87.1875, 8)  # descending, as some sources are
+    # Mirror the real WeatherBench store's quirks: descending latitude AND
+    # longitude stored before latitude. A fixture that is tidier than the real
+    # source hides exactly the bugs it exists to catch.
+    lat = np.linspace(87.1875, -87.1875, 8)
     lon = np.arange(16) * 22.5
     level = np.array([50, 250, 500, 850, 1000])
     rng = np.random.default_rng(0)
@@ -35,16 +44,16 @@ def fake_source(tmp_path: Path) -> str:
     nt, ny, nx, nz = len(times), len(lat), len(lon), len(level)
     ds = xr.Dataset(
         {
-            "2m_temperature": (("time", "latitude", "longitude"), field(nt, ny, nx)),
+            "2m_temperature": (("time", "longitude", "latitude"), field(nt, nx, ny)),
             "total_precipitation_6hr": (
-                ("time", "latitude", "longitude"),
-                np.abs(field(nt, ny, nx)),
+                ("time", "longitude", "latitude"),
+                np.abs(field(nt, nx, ny)),
             ),
             "temperature": (
-                ("time", "level", "latitude", "longitude"),
-                field(nt, nz, ny, nx),
+                ("time", "level", "longitude", "latitude"),
+                field(nt, nz, nx, ny),
             ),
-            "land_sea_mask": (("latitude", "longitude"), field(ny, nx)),
+            "land_sea_mask": (("longitude", "latitude"), field(nx, ny)),
         },
         coords={"time": times, "latitude": lat, "longitude": lon, "level": level},
     )
@@ -107,8 +116,10 @@ def test_output_layout(fake_source: str, tmp_path: Path):
     assert list(out["level"].values) == [250, 850]
     assert np.all(np.diff(out["latitude"].values) > 0)
     assert out["temperature"].dims == ("time", "level", "latitude", "longitude")
+    assert out["2m_temperature"].dims == ("time", "latitude", "longitude")
     assert out["temperature"].dtype == np.float32
     assert out["land_sea_mask"].dims == ("latitude", "longitude")
+    check_layout(out)  # the consumer-side check must agree
 
 
 def test_values_follow_their_coordinates(fake_source: str, tmp_path: Path):

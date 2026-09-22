@@ -23,3 +23,12 @@ Mac) or 2.5 deg (stronger headline result, needs a GPU allocation).
 
 - CI caught three type errors invisible on the dev machine;
   mypy's python_version pin conflicted with 3.12 numpy stubs.
+
+## 2026-09-21 - Phase 1: Data and augmentation
+
+- Bug: ingest left WeatherBench's (time, lon, lat) order in place while
+  claiming canonical (time, lat, lon). Caught by a broadcast error in the
+  latitude weighting. Tests missed it because the fixture was tidier than the
+  real source. Fixed transpose, made the fixture mirror WB2's dim order, and
+  added check_layout() on every store open. Note: a square grid would have
+  hidden this entirely.

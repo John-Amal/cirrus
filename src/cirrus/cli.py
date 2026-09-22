@@ -56,6 +56,19 @@ def main(argv: list[str] | None = None) -> int:
         help="validate the spec against the source and report size; download nothing",
     )
 
+    stats_parser = subparsers.add_parser(
+        "stats", help="compute normalisation statistics over the training period"
+    )
+    stats_parser.add_argument(
+        "--data", type=Path, default=Path("configs/data/era5_5625.yaml")
+    )
+    stats_parser.add_argument(
+        "--splits", type=Path, default=Path("configs/data/splits.yaml")
+    )
+    stats_parser.add_argument(
+        "--normalise", type=Path, default=Path("configs/data/normalise.yaml")
+    )
+
     args = parser.parse_args(argv)
 
     if args.command == "device":
@@ -84,6 +97,27 @@ def main(argv: list[str] | None = None) -> int:
         print(describe(source, spec))
         if not args.dry_run:
             ingest(spec, source=source)
+        return 0
+
+    if args.command == "stats":
+        from cirrus.data.ingest import IngestSpec
+        from cirrus.data.normalise import NormaliseSpec, compute_stats
+        from cirrus.data.splits import Splits
+
+        try:
+            spec = IngestSpec.from_yaml(args.data)
+            splits = Splits.from_yaml(args.splits)
+            nspec = NormaliseSpec.from_yaml(args.normalise)
+            norm = compute_stats(spec.output, spec, splits.train, nspec)
+        except ValueError as err:
+            print(f"error: {err}", file=sys.stderr)
+            return 1
+        path = norm.save(nspec.output)
+        print(f"\n{'channel':32s} {'mean':>14s} {'std':>14s}")
+        for name, m, s in zip(norm.channels, norm.mean, norm.std, strict=True):
+            flag = "  (log)" if name in norm.log_channels else ""
+            print(f"{name:32s} {m:14.6g} {s:14.6g}{flag}")
+        print(f"\nwritten: {path}")
         return 0
 
     from cirrus.train.loop import train  # imported late: torch is slow to load
