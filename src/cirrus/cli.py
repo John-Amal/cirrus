@@ -69,6 +69,24 @@ def main(argv: list[str] | None = None) -> int:
         "--normalise", type=Path, default=Path("configs/data/normalise.yaml")
     )
 
+    sample_parser = subparsers.add_parser("sample", help="inspect one training sample")
+    sample_parser.add_argument(
+        "--split", default="train", choices=["train", "val", "test"]
+    )
+    sample_parser.add_argument("--index", type=int, default=0)
+    sample_parser.add_argument(
+        "--data", type=Path, default=Path("configs/data/era5_5625.yaml")
+    )
+    sample_parser.add_argument(
+        "--splits", type=Path, default=Path("configs/data/splits.yaml")
+    )
+    sample_parser.add_argument(
+        "--window", type=Path, default=Path("configs/data/windows.yaml")
+    )
+    sample_parser.add_argument(
+        "--normalise", type=Path, default=Path("configs/data/normalise.yaml")
+    )
+
     args = parser.parse_args(argv)
 
     if args.command == "device":
@@ -118,6 +136,38 @@ def main(argv: list[str] | None = None) -> int:
             flag = "  (log)" if name in norm.log_channels else ""
             print(f"{name:32s} {m:14.6g} {s:14.6g}{flag}")
         print(f"\nwritten: {path}")
+        return 0
+
+    if args.command == "sample":
+        import numpy as np
+
+        from cirrus.data.dataset import ERA5Dataset
+
+        try:
+            dataset = ERA5Dataset.from_configs(
+                split=args.split,
+                data=args.data,
+                splits=args.splits,
+                window=args.window,
+                normalise=args.normalise,
+            )
+        except (ValueError, FileNotFoundError) as err:
+            print(f"error: {err}", file=sys.stderr)
+            return 1
+
+        item = dataset[args.index]
+        when = np.array(item["time"].numpy()).astype("datetime64[ns]")
+        print(f"split:     {args.split} ({len(dataset):,} samples)")
+        print(f"sample:    {args.index}, last input step {when}")
+        print(f"input:     {tuple(item['input'].shape)}")
+        if "target" in item:
+            print(f"target:    {tuple(item['target'].shape)}")
+        print(f"channels:  {', '.join(dataset.input_channels)}")
+        x = item["input"]
+        print(
+            f"input mean {x.mean():.3f}  std {x.std():.3f}  "
+            f"min {x.min():.2f}  max {x.max():.2f}"
+        )
         return 0
 
     from cirrus.train.loop import train  # imported late: torch is slow to load
