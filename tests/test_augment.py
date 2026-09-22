@@ -19,9 +19,9 @@ from cirrus.data.ingest import IngestSpec
 from cirrus.data.normalise import NormaliseSpec, compute_stats
 from cirrus.data.splits import Period
 from cirrus.data.windows import AugmentSpec, WindowSource, WindowSpec
-from test_windows import TRAIN, build_store, quiet
 
 N_LON = 16
+TRAIN = Period("2000-01-01", "2000-12-31")
 PERIOD = Period("2000-01-01", "2000-12-31")
 
 
@@ -61,29 +61,31 @@ def solar_store(path: Path) -> tuple[str, IngestSpec]:
     return str(path), spec
 
 
-def make_source(tmp_path: Path, augment: AugmentSpec | None) -> WindowSource:
+def make_source(
+    build_store, quiet, tmp_path: Path, augment: AugmentSpec | None
+) -> WindowSource:
     path, spec = build_store(tmp_path / "store.zarr")
     norm = compute_stats(path, spec, TRAIN, NormaliseSpec(), log=quiet)
     return WindowSource(path, spec, TRAIN, WindowSpec(), norm, augment=augment)
 
 
-def test_no_augmentation_means_no_shift(tmp_path: Path):
-    source = make_source(tmp_path, None)
+def test_no_augmentation_means_no_shift(tmp_path: Path, build_store, quiet):
+    source = make_source(build_store, quiet, tmp_path, None)
     assert all(source.roll_shift(i) == 0 for i in range(20))
 
 
-def test_shifts_are_reproducible_and_varied(tmp_path: Path):
+def test_shifts_are_reproducible_and_varied(tmp_path: Path, build_store, quiet):
     """Same seed gives the same draw; draws still cover the grid."""
-    a = make_source(tmp_path / "a", AugmentSpec(seed=7))
-    b = make_source(tmp_path / "b", AugmentSpec(seed=7))
+    a = make_source(build_store, quiet, tmp_path / "a", AugmentSpec(seed=7))
+    b = make_source(build_store, quiet, tmp_path / "b", AugmentSpec(seed=7))
     shifts = [a.roll_shift(i) for i in range(200)]
     assert shifts == [b.roll_shift(i) for i in range(200)]
     assert len(set(shifts)) > 8  # not stuck on one value
     assert all(0 <= s < a.n_longitude for s in shifts)
 
 
-def test_epoch_changes_the_draw(tmp_path: Path):
-    source = make_source(tmp_path, AugmentSpec(seed=0))
+def test_epoch_changes_the_draw(tmp_path: Path, build_store, quiet):
+    source = make_source(build_store, quiet, tmp_path, AugmentSpec(seed=0))
     first = [source.roll_shift(i) for i in range(50)]
     source.set_epoch(1)
     assert first != [source.roll_shift(i) for i in range(50)]
@@ -100,10 +102,10 @@ def spatial(source: WindowSource, sample: dict[str, np.ndarray]) -> np.ndarray:
     return sample["input"][:, :n_spatial]
 
 
-def test_roll_is_a_permutation_not_a_distortion(tmp_path: Path):
+def test_roll_is_a_permutation_not_a_distortion(tmp_path: Path, build_store, quiet):
     """Rolling reorders values; it must not create or destroy any."""
-    plain = make_source(tmp_path / "p", None)
-    rolled = make_source(tmp_path / "r", AugmentSpec(seed=3))
+    plain = make_source(build_store, quiet, tmp_path / "p", None)
+    rolled = make_source(build_store, quiet, tmp_path / "r", AugmentSpec(seed=3))
     index = next(i for i in range(50) if rolled.roll_shift(i) != 0)
 
     a = np.sort(spatial(plain, plain.sample(index)).ravel())
@@ -111,10 +113,10 @@ def test_roll_is_a_permutation_not_a_distortion(tmp_path: Path):
     np.testing.assert_allclose(a, b, rtol=1e-6)
 
 
-def test_input_and_target_roll_together(tmp_path: Path):
+def test_input_and_target_roll_together(tmp_path: Path, build_store, quiet):
     """A different shift for input and target would be silently corrupting."""
-    plain = make_source(tmp_path / "p", None)
-    rolled = make_source(tmp_path / "r", AugmentSpec(seed=3))
+    plain = make_source(build_store, quiet, tmp_path / "p", None)
+    rolled = make_source(build_store, quiet, tmp_path / "r", AugmentSpec(seed=3))
     index = next(i for i in range(50) if rolled.roll_shift(i) != 0)
     shift = rolled.roll_shift(index)
 
@@ -122,17 +124,17 @@ def test_input_and_target_roll_together(tmp_path: Path):
     np.testing.assert_allclose(rolled.sample(index)["target"], expected, rtol=1e-6)
 
 
-def test_latitude_is_untouched(tmp_path: Path):
+def test_latitude_is_untouched(tmp_path: Path, build_store, quiet):
     """The roll must not move data between latitudes."""
-    plain = make_source(tmp_path / "p", None)
-    rolled = make_source(tmp_path / "r", AugmentSpec(seed=3))
+    plain = make_source(build_store, quiet, tmp_path / "p", None)
+    rolled = make_source(build_store, quiet, tmp_path / "r", AugmentSpec(seed=3))
     index = next(i for i in range(50) if rolled.roll_shift(i) != 0)
     a = spatial(plain, plain.sample(index)).mean(axis=-1)  # zonal mean per lat
     b = spatial(rolled, rolled.sample(index)).mean(axis=-1)
     np.testing.assert_allclose(a, b, rtol=1e-5)
 
 
-def test_roll_preserves_local_solar_time(tmp_path: Path):
+def test_roll_preserves_local_solar_time(tmp_path: Path, quiet):
     """The physics check: rolled fields must match the shifted clock.
 
     If the time encodings did not move with the roll, the augmented sample
@@ -165,7 +167,7 @@ def told_hours(sample: dict[str, np.ndarray]) -> float:
     return float((np.arctan2(sin_hour, cos_hour) / (2 * np.pi) * 24) % 24)
 
 
-def test_wrong_sign_would_fail_this_test(tmp_path: Path):
+def test_wrong_sign_would_fail_this_test(tmp_path: Path, quiet):
     """Guard the guard: the unshifted clock must disagree with the field.
 
     Derives both hours from the forcing channels, so there is no datetime

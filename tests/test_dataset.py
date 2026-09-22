@@ -19,11 +19,12 @@ from cirrus.data.dataset import ERA5Dataset
 from cirrus.data.normalise import NormaliseSpec, compute_stats
 from cirrus.data.splits import Period
 from cirrus.data.windows import WindowSpec
-from test_windows import TRAIN, build_store, quiet
+
+TRAIN = Period("2000-01-01", "2000-12-31")
 
 
 @pytest.fixture
-def dataset(tmp_path: Path) -> ERA5Dataset:
+def dataset(tmp_path: Path, build_store, quiet) -> ERA5Dataset:
     path, spec = build_store(tmp_path / "store.zarr")
     norm = compute_stats(path, spec, TRAIN, NormaliseSpec(), log=quiet)
     return ERA5Dataset(path, spec, TRAIN, WindowSpec(), norm)
@@ -62,7 +63,7 @@ def test_multiple_workers_can_each_open_the_store(dataset: ERA5Dataset):
     assert sum(batches) == len(dataset)
 
 
-def test_period_outside_data_gives_empty_dataset(tmp_path: Path):
+def test_period_outside_data_gives_empty_dataset(tmp_path: Path, build_store, quiet):
     path, spec = build_store(tmp_path / "store.zarr")
     norm = compute_stats(path, spec, TRAIN, NormaliseSpec(), log=quiet)
     empty = ERA5Dataset(

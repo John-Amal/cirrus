@@ -30,7 +30,9 @@ jobs:
         run: pip install -e ".[dev]"
 
       - name: Lint
-        run: ruff check .
+        run: |
+          ruff --version
+          ruff check .
 
       - name: Format check
         run: ruff format --check .

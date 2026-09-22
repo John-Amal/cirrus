@@ -14,7 +14,6 @@ import numpy as np
 import pytest
 import xarray as xr
 
-from cirrus.data.ingest import IngestSpec
 from cirrus.data.normalise import Normaliser, NormaliseSpec, compute_stats
 from cirrus.data.splits import Period
 from cirrus.data.windows import (
@@ -28,59 +27,8 @@ from cirrus.data.windows import (
 TRAIN = Period("2000-01-01", "2000-12-31")
 
 
-def build_store(path: Path, drop: slice | None = None) -> tuple[str, IngestSpec]:
-    """Build a canonical-layout store; ``drop`` removes steps to make a gap."""
-    times = np.arange(
-        np.datetime64("2000-01-01T00"),
-        np.datetime64("2001-06-01T00"),
-        np.timedelta64(6, "h"),
-    ).astype("datetime64[ns]")
-    if drop is not None:
-        times = np.delete(times, drop)
-    lat = np.linspace(-80.0, 80.0, 8)
-    lon = np.arange(16) * 22.5
-    level = np.array([500, 850])
-    rng = np.random.default_rng(0)
-    nt = len(times)
-
-    ds = xr.Dataset(
-        {
-            "2m_temperature": (
-                ("time", "latitude", "longitude"),
-                250 + 10 * rng.standard_normal((nt, 8, 16)),
-            ),
-            "total_precipitation_6hr": (
-                ("time", "latitude", "longitude"),
-                rng.exponential(0.002, (nt, 8, 16)),
-            ),
-            "temperature": (
-                ("time", "level", "latitude", "longitude"),
-                rng.standard_normal((nt, 2, 8, 16)),
-            ),
-            "land_sea_mask": (("latitude", "longitude"), rng.random((8, 16))),
-        },
-        coords={"time": times, "latitude": lat, "longitude": lon, "level": level},
-    ).astype("float32")
-    ds.to_zarr(path, zarr_format=2)
-
-    spec = IngestSpec(
-        output=str(path),
-        start="2000-01-01",
-        end="2001-05-31",
-        surface_variables=("2m_temperature", "total_precipitation_6hr"),
-        upper_variables=("temperature",),
-        levels=(500, 850),
-        static_variables=("land_sea_mask",),
-    )
-    return str(path), spec
-
-
-def quiet(_: str) -> None:
-    """Swallow progress logging in tests."""
-
-
 @pytest.fixture
-def source(tmp_path: Path) -> WindowSource:
+def source(tmp_path: Path, build_store, quiet) -> WindowSource:
     path, spec = build_store(tmp_path / "store.zarr")
     norm = compute_stats(path, spec, TRAIN, NormaliseSpec(), log=quiet)
     return WindowSource(path, spec, TRAIN, WindowSpec(), norm)
@@ -140,7 +88,7 @@ def test_target_is_exactly_one_lead_step_after_the_last_input(source: WindowSour
     np.testing.assert_allclose(got, expected, rtol=1e-4)
 
 
-def test_windows_never_leave_the_split(tmp_path: Path):
+def test_windows_never_leave_the_split(tmp_path: Path, build_store, quiet):
     """Every timestep touched, input and target, is inside the period."""
     path, spec = build_store(tmp_path / "store.zarr")
     norm = compute_stats(path, spec, TRAIN, NormaliseSpec(), log=quiet)
@@ -178,7 +126,7 @@ def test_midnight_and_midday_are_opposite():
     assert enc[0, 3] == pytest.approx(-enc[1, 3], abs=1e-6)
 
 
-def test_no_target_mode_for_pretraining(tmp_path: Path):
+def test_no_target_mode_for_pretraining(tmp_path: Path, build_store, quiet):
     """Masked-autoencoder pretraining needs inputs only."""
     path, spec = build_store(tmp_path / "store.zarr")
     norm = compute_stats(path, spec, TRAIN, NormaliseSpec(), log=quiet)
@@ -188,7 +136,7 @@ def test_no_target_mode_for_pretraining(tmp_path: Path):
     assert sample["input"].shape[0] == 1
 
 
-def test_in_memory_matches_lazy(tmp_path: Path):
+def test_in_memory_matches_lazy(tmp_path: Path, build_store, quiet):
     """The cache must be an optimisation, not a behaviour change."""
     path, spec = build_store(tmp_path / "store.zarr")
     norm = compute_stats(path, spec, TRAIN, NormaliseSpec(), log=quiet)

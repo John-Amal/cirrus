@@ -50,6 +50,12 @@ select = ["E", "F", "I", "UP", "B", "SIM", "D"]
 # D107: __init__ args are documented on the class docstring instead.
 ignore = ["D100", "D104", "D107", "D203", "D213"]
 
+[tool.ruff.lint.isort]
+# Declared, not inferred. Ruff otherwise guesses from whether the package is
+# importable, which differs between a dev machine and a CI runner that has
+# pip-installed it -- so the same file sorted two different ways.
+known-first-party = ["cirrus"]
+
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["D103"]
 
