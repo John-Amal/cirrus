@@ -1,0 +1,6 @@
+# Precipitation is log-transformed as a model *input*: log1p(max(x, 0) / scale).
+# The extremes head will take it in physical units as a *target* instead.
+log_variables: [total_precipitation_6hr]
+log_scale: 0.001          # metres, i.e. 1 mm
+latitude_weighted: true
+output: data/stats/era5_5625_train.json

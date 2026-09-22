@@ -1,0 +1,12 @@
+# One month, same variables: for timing the download before committing to
+# the full pull. Extrapolate: full-pull time ~ this time x (months requested).
+source: gs://weatherbench2/datasets/era5/1959-2023_01_10-6h-64x32_equiangular_conservative.zarr
+output: data/era5_5625_test_month.zarr
+start: "2010-01-01"
+end: "2010-01-31"
+surface_variables: [2m_temperature, 10m_u_component_of_wind, 10m_v_component_of_wind,
+                    mean_sea_level_pressure, total_precipitation_6hr, total_column_water_vapour]
+upper_variables: [geopotential, temperature, specific_humidity, u_component_of_wind,
+                  v_component_of_wind]
+levels: [250, 500, 850]
+static_variables: [geopotential_at_surface, land_sea_mask]

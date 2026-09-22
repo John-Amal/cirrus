@@ -11,8 +11,8 @@ build/
 .mypy_cache/
 
 # Never commit data or weights — they belong on Hugging Face or a data store
-data/
-checkpoints/
+/data/
+/checkpoints/
 *.zarr/
 *.nc
 *.pt

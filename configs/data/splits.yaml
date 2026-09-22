@@ -1,0 +1,9 @@
+# Defined once; read by normalisation, datasets and evaluation.
+#
+# test starts in 2017 because 2017-2022 overlaps the DestinE storylines:
+# training on those years would leak the synoptic situations the
+# out-of-distribution evaluation depends on. It also contains 2018 and 2020,
+# the years used in the record-breaking-extremes study we compare against.
+train: ["1979-01-01", "2014-12-31"]
+val: ["2015-01-01", "2016-12-31"]
+test: ["2017-01-01", "2022-12-31"]

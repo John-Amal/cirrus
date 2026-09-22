@@ -1,0 +1,35 @@
+# ERA5 at 5.625 deg (64x32), 6-hourly, from WeatherBench 2.
+# Conservatively regridded upstream; storylines must be coarsened the same way.
+#
+# PROVISIONAL variable list: must be cut down to the intersection with what
+# the DestinE storylines archive. Run `cirrus ingest --dry-run` after editing.
+
+source: gs://weatherbench2/datasets/era5/1959-2023_01_10-6h-64x32_equiangular_conservative.zarr
+output: data/era5_5625.zarr
+
+# Full pull. 2017-2022 are downloaded but reserved for evaluation: they
+# overlap the storylines, and training on them would leak the synoptic
+# situations the out-of-distribution test depends on.
+start: "1979-01-01"
+end: "2022-12-31"
+
+surface_variables:
+  - 2m_temperature
+  - 10m_u_component_of_wind
+  - 10m_v_component_of_wind
+  - mean_sea_level_pressure
+  - total_precipitation_6hr
+  - total_column_water_vapour
+
+upper_variables:
+  - geopotential
+  - temperature
+  - specific_humidity
+  - u_component_of_wind
+  - v_component_of_wind
+
+levels: [250, 500, 850]
+
+static_variables:
+  - geopotential_at_surface
+  - land_sea_mask

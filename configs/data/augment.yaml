@@ -1,0 +1,13 @@
+# Training splits only. Validation and test are never augmented.
+#
+# roll: shift every field east by k grid cells, with the time encodings moved
+#   back by k * 24/n_longitude hours so local solar time is preserved.
+#   Valid because atmospheric dynamics are equivariant under rotation about
+#   the Earth's axis, and free because it permutes data already in memory.
+#
+# Deliberately absent: mixup (averaging states smooths extremes, the exact
+# quantity this project measures), latitude flips (reverse Coriolis without
+# reversing the flow), and masking (that is the Phase 2 pretraining
+# objective, not an augmentation).
+roll: true
+seed: 0

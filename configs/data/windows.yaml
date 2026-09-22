@@ -1,0 +1,15 @@
+# What one training sample looks like.
+#
+# n_input: 2 gives the model a tendency. One snapshot cannot distinguish a
+#   deepening low from a filling one.
+# lead: 1 step = 6 h. Longer forecasts come from autoregressive rollout in
+#   Phase 3, not from training a separate model per lead time.
+# forcings: sin/cos of day-of-year and hour, so the model knows the season
+#   and the diurnal phase instead of inferring them.
+# in_memory: false streams from zarr. Set true only for short periods; the
+#   full training split does not fit in RAM.
+n_input: 2
+lead: 1
+n_target: 1
+forcings: true
+in_memory: false
