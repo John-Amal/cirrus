@@ -20,7 +20,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0",
-    "ruff>=0.6",
+    "ruff==0.16.8",  # pinned: lint tools are pinned, libraries float
     "mypy>=1.11",
     "pre-commit>=3.8",
     "types-PyYAML",
@@ -39,6 +39,11 @@ packages = ["src/cirrus"]
 [tool.ruff]
 line-length = 88
 target-version = "py311"
+# Say explicitly which directories are first-party. Without this, ruff infers
+# it, and the inference differs between a machine where the package is
+# pip-installed and one where it is not -- so import sorting passed locally
+# and failed in CI.
+src = ["src", "tests"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM", "D"]

@@ -14,12 +14,12 @@ from pathlib import Path
 import numpy as np
 import pytest
 import xarray as xr
-from test_windows import TRAIN, build_store, quiet
 
 from cirrus.data.ingest import IngestSpec
 from cirrus.data.normalise import NormaliseSpec, compute_stats
 from cirrus.data.splits import Period
 from cirrus.data.windows import AugmentSpec, WindowSource, WindowSpec
+from test_windows import TRAIN, build_store, quiet
 
 N_LON = 16
 PERIOD = Period("2000-01-01", "2000-12-31")

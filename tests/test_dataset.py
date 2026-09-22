@@ -13,13 +13,13 @@ from pathlib import Path
 
 import pytest
 import torch
-from test_windows import TRAIN, build_store, quiet
 from torch.utils.data import DataLoader
 
 from cirrus.data.dataset import ERA5Dataset
 from cirrus.data.normalise import NormaliseSpec, compute_stats
 from cirrus.data.splits import Period
 from cirrus.data.windows import WindowSpec
+from test_windows import TRAIN, build_store, quiet
 
 
 @pytest.fixture

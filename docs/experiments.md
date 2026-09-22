@@ -32,3 +32,8 @@ Mac) or 2.5 deg (stronger headline result, needs a GPU allocation).
   real source. Fixed transpose, made the fixture mirror WB2's dim order, and
   added check_layout() on every store open. Note: a square grid would have
   hidden this entirely.
+
+- Longitude roll must be paired with a clock shift of -k\*24/n_lon hours, or
+  the augmentation teaches a false diurnal cycle. Verified with a synthetic
+  field defined purely by local solar time, and by checking the test fails
+  when the pairing is removed.
