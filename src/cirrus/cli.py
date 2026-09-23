@@ -87,6 +87,19 @@ def main(argv: list[str] | None = None) -> int:
         "--normalise", type=Path, default=Path("configs/data/normalise.yaml")
     )
 
+    pre = subparsers.add_parser("pretrain", help="masked-autoencoder pretraining")
+    pre.add_argument("--config", type=Path, default=Path("configs/train/pretrain.yaml"))
+    pre.add_argument("--model", type=Path, default=Path("configs/model/mae_small.yaml"))
+    pre.add_argument(
+        "--objective", type=Path, default=Path("configs/train/mae_objective.yaml")
+    )
+    pre.add_argument("--data", type=Path, default=Path("configs/data/era5_5625.yaml"))
+    pre.add_argument("--resume", type=Path, default=None)
+    pre.add_argument("--epochs", type=int, default=None, help="override the config")
+    pre.add_argument(
+        "--max-steps", type=int, default=None, help="steps per epoch; 0 means all"
+    )
+
     args = parser.parse_args(argv)
 
     if args.command == "device":
@@ -168,6 +181,34 @@ def main(argv: list[str] | None = None) -> int:
             f"input mean {x.mean():.3f}  std {x.std():.3f}  "
             f"min {x.min():.2f}  max {x.max():.2f}"
         )
+        return 0
+
+    if args.command == "pretrain":
+        from dataclasses import replace
+
+        from cirrus.models.mae import MaeSpec
+        from cirrus.models.vit import BackboneSpec
+        from cirrus.train.pretrain import PretrainSpec, pretrain
+
+        try:
+            # Distinct name: `spec` is bound to an IngestSpec in the branches
+            # above, and a function-scoped name carries one type throughout.
+            train_spec = PretrainSpec.from_yaml(args.config)
+            backbone_spec = BackboneSpec.from_yaml(args.model)
+            mae_spec = MaeSpec.from_yaml(args.objective)
+        except ValueError as err:
+            print(f"error: {err}", file=sys.stderr)
+            return 1
+
+        # Named keywords rather than **kwargs: dataclasses.replace cannot be
+        # type-checked through an unpacked dict, and a suppression comment
+        # would then flip between needed and unused as other things change.
+        if args.epochs is not None:
+            train_spec = replace(train_spec, epochs=args.epochs)
+        if args.max_steps is not None:
+            train_spec = replace(train_spec, max_steps_per_epoch=args.max_steps)
+
+        pretrain(train_spec, backbone_spec, mae_spec, args.data, args.resume)
         return 0
 
     from cirrus.train.loop import train  # imported late: torch is slow to load

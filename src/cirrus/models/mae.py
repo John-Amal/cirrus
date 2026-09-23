@@ -220,7 +220,12 @@ class MaskedAutoencoder(nn.Module):
 
         """
         batch, n_tokens, _ = tokens.shape
-        noise = torch.rand(batch, n_tokens, device=tokens.device, generator=generator)
+        # Drawn on CPU and moved, not drawn on the tokens' device. A generator
+        # must live on the same device as the tensor it fills, and a CPU
+        # generator is the portable choice: the same seed then produces the
+        # same mask on mps, cuda and cpu, so runs are comparable across
+        # machines. The noise is tiny, so the transfer costs nothing.
+        noise = torch.rand(batch, n_tokens, generator=generator).to(tokens.device)
 
         ids_shuffle = noise.argsort(dim=1)
         ids_restore = ids_shuffle.argsort(dim=1)

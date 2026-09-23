@@ -1,0 +1,17 @@
+# Pretraining run settings. Start with a smoke test:
+#   cirrus pretrain --max-steps 5 --epochs 1
+name: mae_small
+epochs: 20
+batch_size: 32
+learning_rate: 0.00015
+weight_decay: 0.05
+warmup_epochs: 1.0
+min_lr_ratio: 0.01
+grad_clip: 1.0
+num_workers: 4          # benchmark before raising: on macOS 0 is often fastest
+seed: 0
+amp: false              # only effective on cuda; mps stays float32
+log_every: 50
+max_steps_per_epoch: 0  # 0 means the whole split
+val_batches: 20         # fixed subset, so the curve is comparable across epochs
+out_dir: runs

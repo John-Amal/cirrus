@@ -92,6 +92,20 @@ def test_masking_is_reproducible_with_a_generator(mae: MaskedAutoencoder):
     torch.testing.assert_close(draw(), draw())
 
 
+def test_masking_works_with_a_cpu_generator_on_any_device(mae: MaskedAutoencoder):
+    """Regression: a CPU generator must not force the tokens onto CPU.
+
+    Training crashed here on mps -- torch.rand refuses a generator whose
+    device differs from the tensor's. The noise is now drawn on CPU and
+    moved, which also makes masks identical across devices.
+    """
+    tokens = mae.backbone.embed(field())
+    generator = torch.Generator().manual_seed(3)
+    _, mask, _ = mae.random_masking(tokens, generator)
+    assert mask.device == tokens.device
+    assert mask.sum().item() == pytest.approx(BATCH * mae.n_masked)
+
+
 def test_loss_ignores_visible_patches():
     """Changing predictions on visible patches must not change the loss."""
     torch.manual_seed(0)

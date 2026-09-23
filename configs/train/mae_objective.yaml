@@ -1,0 +1,6 @@
+# The pretraining objective.
+mask_ratio: 0.75        # standard for MAE: a hard enough task to force learning
+decoder_dim: 128        # decoder is small and discarded after pretraining
+decoder_depth: 2
+decoder_heads: 4
+latitude_weighted: true # a polar patch covers a fraction of an equatorial one

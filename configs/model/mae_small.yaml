@@ -1,0 +1,7 @@
+# Backbone architecture. ~5M parameters at these settings, 128 tokens.
+dim: 256
+depth: 6
+n_heads: 8
+patch: 4          # 32x64 grid -> 8x16 = 128 tokens
+mlp_ratio: 4.0
+dropout: 0.0      # the dataset is large; regularise with data, not dropout
