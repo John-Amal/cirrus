@@ -37,3 +37,8 @@ Mac) or 2.5 deg (stronger headline result, needs a GPU allocation).
   the augmentation teaches a false diurnal cycle. Verified with a synthetic
   field defined purely by local solar time, and by checking the test fails
   when the pairing is removed.
+
+- .gitignore rule "data/" matched at any depth and silently excluded
+  src/cirrus/data/ from git. Local tests passed for days while CI never had
+  the package. Anchor directory ignores with a leading slash, and check
+  `git ls-files` for a new package rather than trusting `git status`.
