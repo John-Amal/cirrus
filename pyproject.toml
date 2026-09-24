@@ -15,6 +15,7 @@ dependencies = [
     "xarray>=2024.6",
     "zarr>=2.18",
     "gcsfs>=2024.6",  # anonymous reads from public Google Cloud buckets
+    "matplotlib>=3.8",  # diagnostics and README figures
 ]
 
 [project.optional-dependencies]

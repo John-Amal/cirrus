@@ -42,3 +42,8 @@ Mac) or 2.5 deg (stronger headline result, needs a GPU allocation).
   src/cirrus/data/ from git. Local tests passed for days while CI never had
   the package. Anchor directory ignores with a leading slash, and check
   `git ls-files` for a new package rather than trusting `git status`.
+
+- Pretraining throughput, M-series Mac, 5.6deg, 5M params, batch 32:
+  0.89 s/step with num_workers=0, 0.29 s/step with num_workers=4.
+  Thoroughly dataloader-bound; single-process loading alone is ~4.6 s/batch.
+  Epoch ~8 min, so 20 epochs ~2.6 h.

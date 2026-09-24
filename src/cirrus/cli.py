@@ -100,6 +100,22 @@ def main(argv: list[str] | None = None) -> int:
         "--max-steps", type=int, default=None, help="steps per epoch; 0 means all"
     )
 
+    insp = subparsers.add_parser(
+        "inspect", help="score a checkpoint per variable and plot reconstructions"
+    )
+    insp.add_argument("--checkpoint", type=Path, default=Path("runs/mae_small/best.pt"))
+    insp.add_argument(
+        "--channels",
+        default="2m_temperature,total_precipitation_6hr,geopotential_500",
+        help="comma-separated variables to plot",
+    )
+    insp.add_argument(
+        "--out", type=Path, default=Path("runs/mae_small/reconstruction.png")
+    )
+    insp.add_argument("--batches", type=int, default=20)
+    insp.add_argument("--split", default="val", choices=["train", "val", "test"])
+    insp.add_argument("--sample", type=int, default=0)
+
     args = parser.parse_args(argv)
 
     if args.command == "device":
@@ -180,6 +196,19 @@ def main(argv: list[str] | None = None) -> int:
         print(
             f"input mean {x.mean():.3f}  std {x.std():.3f}  "
             f"min {x.min():.2f}  max {x.max():.2f}"
+        )
+        return 0
+
+    if args.command == "inspect":
+        from cirrus.eval.reconstruction import inspect
+
+        inspect(
+            checkpoint=args.checkpoint,
+            channels=[c.strip() for c in args.channels.split(",") if c.strip()],
+            out_path=args.out,
+            batches=args.batches,
+            split=args.split,
+            sample_index=args.sample,
         )
         return 0
 
