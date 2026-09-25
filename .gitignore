@@ -21,3 +21,4 @@ build/
 wandb/
 .DS_Store
 .ipynb_checkpoints/
+release/

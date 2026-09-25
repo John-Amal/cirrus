@@ -19,6 +19,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+hub = ["huggingface_hub>=0.24"]  # only needed to publish the checkpoint
 dev = [
     "pytest>=8.0",
     "ruff==0.16.8",  # pinned: lint tools are pinned, libraries float

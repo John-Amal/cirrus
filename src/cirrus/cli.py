@@ -115,6 +115,11 @@ def main(argv: list[str] | None = None) -> int:
     insp.add_argument("--batches", type=int, default=20)
     insp.add_argument("--split", default="val", choices=["train", "val", "test"])
     insp.add_argument("--sample", type=int, default=0)
+    insp.add_argument(
+        "--amplitude-variable",
+        default="total_precipitation_6hr",
+        help="variable for the tail-amplitude comparison",
+    )
 
     args = parser.parse_args(argv)
 
@@ -209,6 +214,7 @@ def main(argv: list[str] | None = None) -> int:
             batches=args.batches,
             split=args.split,
             sample_index=args.sample,
+            amplitude_variable=args.amplitude_variable,
         )
         return 0
 

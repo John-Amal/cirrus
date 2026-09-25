@@ -132,6 +132,95 @@ def variable_losses(
     return {name: float(np.mean(values)) for name, values in grouped.items()}
 
 
+def distribution_summary(
+    predicted: np.ndarray, truth: np.ndarray, quantiles: tuple[float, ...]
+) -> dict[str, dict[str, float]]:
+    """Mean, quantiles and maximum of two samples, with their ratios."""
+    report: dict[str, dict[str, float]] = {
+        "mean": {"truth": float(truth.mean()), "prediction": float(predicted.mean())}
+    }
+    for q in quantiles:
+        report[f"p{q * 100:g}"] = {
+            "truth": float(np.quantile(truth, q)),
+            "prediction": float(np.quantile(predicted, q)),
+        }
+    report["max"] = {"truth": float(truth.max()), "prediction": float(predicted.max())}
+    for row in report.values():
+        row["ratio"] = (
+            row["prediction"] / row["truth"] if row["truth"] else float("nan")
+        )
+    return report
+
+
+@torch.no_grad()
+def amplitude_deficit(
+    model: MaskedAutoencoder,
+    loader: DataLoader[dict[str, torch.Tensor]],
+    device: torch.device,
+    normaliser: Normaliser,
+    variable_index: int,
+    n_variables: int,
+    max_batches: int = 20,
+    seed: int = 0,
+    quantiles: tuple[float, ...] = (0.9, 0.99, 0.999),
+) -> dict[str, dict[str, dict[str, float]]]:
+    """Compare reconstructed and true value distributions over masked patches.
+
+    Reported in two spaces, because they answer different questions.
+
+    **Transformed** is the space the loss is computed in: z-scored, and for
+    precipitation, after ``log1p``. A mean ratio near 1 here says the model
+    is unbiased at the thing it was actually optimised for.
+
+    **Physical** is millimetres. If the mean ratio is below 1 here while it
+    is near 1 above, the shortfall comes from the transform rather than the
+    model: ``expm1`` is convex, so by Jensen's inequality transforming a
+    conditional mean back gives less than the mean of the transformed values.
+    An MSE objective in log space is therefore systematically dry in mm.
+
+    The tail ratios measure the other effect: squared error is minimised by
+    predicting the conditional mean, so a model that cannot place an event
+    exactly is rewarded for spreading it out, and intensity collapses.
+    """
+    generator = torch.Generator(device="cpu")
+    values_per_patch = model.patch * model.patch
+    predicted_parts, true_parts = [], []
+
+    for index, batch in enumerate(loader):
+        if index >= max_batches:
+            break
+        generator.manual_seed(seed + index)
+        x = flatten_time(batch["input"]).to(device)
+        out = model(x, generator)
+
+        shape = (x.shape[0], model.n_tokens, model.n_target_channels, values_per_patch)
+        prediction = out["prediction"].reshape(shape)
+        target = model.targets(x).reshape(shape)
+        hidden = out["mask"].bool()
+
+        # The variable appears once per input step; pool them.
+        for channel in range(variable_index, model.n_target_channels, n_variables):
+            predicted_parts.append(prediction[:, :, channel][hidden].cpu().numpy())
+            true_parts.append(target[:, :, channel][hidden].cpu().numpy())
+
+    predicted_z = np.concatenate(predicted_parts)
+    truth_z = np.concatenate(true_parts)
+
+    # Undo only the z-scoring: this is log1p space for a log channel.
+    mean, std = float(normaliser.mean[0]), float(normaliser.std[0])
+    transformed = distribution_summary(
+        predicted_z * std + mean, truth_z * std + mean, quantiles
+    )
+
+    def to_units(values: np.ndarray) -> np.ndarray:
+        return cast(
+            np.ndarray, normaliser.denormalise(values.reshape(-1, 1, 1, 1)).reshape(-1)
+        )
+
+    physical = distribution_summary(to_units(predicted_z), to_units(truth_z), quantiles)
+    return {"transformed": transformed, "physical": physical}
+
+
 @torch.no_grad()
 def reconstruction_figure(
     model: MaskedAutoencoder,
@@ -219,6 +308,7 @@ def inspect(
     batches: int = 20,
     split: str = "val",
     sample_index: int = 0,
+    amplitude_variable: str = "total_precipitation_6hr",
 ) -> dict[str, float]:
     """Score a checkpoint per variable and write a reconstruction figure."""
     from cirrus.device import device_report, get_device
@@ -239,6 +329,28 @@ def inspect(
     print(f"{'variable':32s} {'MSE':>8s}")
     for name, value in sorted(by_variable.items(), key=lambda kv: -kv[1]):
         print(f"{name:32s} {value:8.4f}")
+
+    if amplitude_variable in variables:
+        scale, unit = UNITS.get(amplitude_variable, (1.0, "native units"))
+        report = amplitude_deficit(
+            model=model,
+            loader=loader,
+            device=device,
+            normaliser=dataset.source.dynamic_norm.subset([amplitude_variable]),
+            variable_index=variables.index(amplitude_variable),
+            n_variables=len(variables),
+            max_batches=batches,
+        )
+        for space, rows in report.items():
+            factor = scale if space == "physical" else 1.0
+            label = unit if space == "physical" else "log1p space, where the loss lives"
+            print(f"\n{amplitude_variable} over masked patches [{label}]")
+            print(f"{'':10s} {'truth':>10s} {'predicted':>10s} {'ratio':>8s}")
+            for name, row in rows.items():
+                print(
+                    f"{name:10s} {row['truth'] * factor:10.3f} "
+                    f"{row['prediction'] * factor:10.3f} {row['ratio']:8.2f}"
+                )
 
     figure_path = reconstruction_figure(
         model.cpu(), dataset, variables, channels, out_path, sample_index

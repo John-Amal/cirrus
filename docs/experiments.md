@@ -43,7 +43,28 @@ Mac) or 2.5 deg (stronger headline result, needs a GPU allocation).
   the package. Anchor directory ignores with a leading slash, and check
   `git ls-files` for a new package rather than trusting `git status`.
 
+## 2026-09-23 - PHASE 2: Pretraining
+
 - Pretraining throughput, M-series Mac, 5.6deg, 5M params, batch 32:
   0.89 s/step with num_workers=0, 0.29 s/step with num_workers=4.
   Thoroughly dataloader-bound; single-process loading alone is ~4.6 s/batch.
   Epoch ~8 min, so 20 epochs ~2.6 h.
+
+- Pretraining, 20 epochs, val MSE 0.2385 (from ~1.0 at init). Train/val gap
+  0.015: underfitting, not overfitting -- capacity/schedule limited.
+
+- Per-variable spread is 30x: geopotential_250 0.021, precipitation 0.618.
+  Meridional wind (~0.53) is ~2x harder than zonal (~0.25): no climatology
+  to fall back on.
+
+- Tail amplitude over masked patches: ratio 0.38 at p99, 0.30 at p99.9,
+  0.30 at the max. Mean ratio 0.76 -- suspect Jensen bias from the log1p
+  transform, to be confirmed.
+
+- Tail deficit is transform-amplified, measured on masked val patches:
+  log1p space  mean 1.00, p99 0.61, p99.9 0.60
+  physical mm  mean 0.76, p99 0.38, p99.9 0.30
+  The model is exactly unbiased where it was optimised. A ~1.0 log-unit
+  error at p99.9 (MSE ~1.07, unremarkable) is 12.1 mm vs 3.7 mm in physical
+  units. The loss is nearly flat exactly where the extremes are -- the
+  motivation for the GPD-informed head, now measured rather than assumed.
