@@ -121,6 +121,28 @@ def main(argv: list[str] | None = None) -> int:
         help="variable for the tail-amplitude comparison",
     )
 
+    thr = subparsers.add_parser(
+        "thresholds", help="per-cell exceedance thresholds for precipitation"
+    )
+    thr.add_argument("--data", type=Path, default=Path("configs/data/era5_5625.yaml"))
+    thr.add_argument("--splits", type=Path, default=Path("configs/data/splits.yaml"))
+    thr.add_argument(
+        "--config", type=Path, default=Path("configs/data/thresholds.yaml")
+    )
+
+    fine = subparsers.add_parser(
+        "finetune", help="train a precipitation head on the frozen backbone"
+    )
+    fine.add_argument(
+        "--config", type=Path, default=Path("configs/train/finetune.yaml")
+    )
+    fine.add_argument("--data", type=Path, default=Path("configs/data/era5_5625.yaml"))
+    fine.add_argument(
+        "--objective", default=None, choices=["mse", "l1", "crps", "twcrps"]
+    )
+    fine.add_argument("--epochs", type=int, default=None)
+    fine.add_argument("--max-steps", type=int, default=None)
+
     args = parser.parse_args(argv)
 
     if args.command == "device":
@@ -202,6 +224,44 @@ def main(argv: list[str] | None = None) -> int:
             f"input mean {x.mean():.3f}  std {x.std():.3f}  "
             f"min {x.min():.2f}  max {x.max():.2f}"
         )
+        return 0
+
+    if args.command == "finetune":
+        from dataclasses import replace as replace_field
+
+        from cirrus.train.finetune import FinetuneSpec, finetune
+
+        try:
+            arm = FinetuneSpec.from_yaml(args.config)
+        except ValueError as err:
+            print(f"error: {err}", file=sys.stderr)
+            return 1
+        if args.objective is not None:
+            arm = replace_field(arm, objective=args.objective)
+        if args.epochs is not None:
+            arm = replace_field(arm, epochs=args.epochs)
+        if args.max_steps is not None:
+            arm = replace_field(arm, max_steps_per_epoch=args.max_steps)
+
+        finetune(arm, data_config=args.data)
+        return 0
+
+    if args.command == "thresholds":
+        from cirrus.data.ingest import IngestSpec
+        from cirrus.data.splits import Splits
+        from cirrus.data.thresholds import ThresholdSpec, compute_thresholds
+
+        try:
+            data_spec = IngestSpec.from_yaml(args.data)
+            threshold_spec = ThresholdSpec.from_yaml(args.config)
+            splits = Splits.from_yaml(args.splits)
+            thresholds = compute_thresholds(
+                data_spec.output, data_spec, splits.train, threshold_spec
+            )
+        except ValueError as err:
+            print(f"error: {err}", file=sys.stderr)
+            return 1
+        print(f"written: {thresholds.save(threshold_spec.output)}")
         return 0
 
     if args.command == "inspect":

@@ -1,0 +1,26 @@
+# One arm of the objective comparison. Override the arm on the command line:
+#   cirrus finetune --objective mse
+#   cirrus finetune --objective twcrps
+#
+# The backbone is frozen, so every arm starts from identical representations
+# and only the head differs. That is what makes the comparison attributable
+# to the objective rather than to anything else.
+objective: twcrps        # mse | l1 | crps | twcrps
+pretrained: runs/mae_small/best.pt
+freeze_backbone: true
+head_depth: 2
+n_samples: 24            # CRPS spread term is O(n^2); 20-30 is the useful range
+
+epochs: 8
+batch_size: 32
+learning_rate: 0.0003
+weight_decay: 0.01
+warmup_epochs: 0.5
+min_lr_ratio: 0.01
+grad_clip: 1.0
+num_workers: 4
+seed: 0
+log_every: 50
+max_steps_per_epoch: 0
+val_batches: 20
+out_dir: runs

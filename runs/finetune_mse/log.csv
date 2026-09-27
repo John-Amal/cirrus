@@ -1,0 +1,2 @@
+epoch,train_objective,val_objective,val_mae_mm,seconds
+1,1.851861,1.960938,0.798374,16.9

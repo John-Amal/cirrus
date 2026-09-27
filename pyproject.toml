@@ -70,6 +70,11 @@ known-first-party = ["cirrus"]
 # `mypy src` fails on CI while passing on a machine where it is not installed.
 mypy_path = "src"
 strict = true
+# torch ships py.typed but leaves some methods unannotated (Tensor.backward
+# among them). Strict mode forbids calling untyped functions; this exempts
+# torch's own API rather than scattering per-call suppressions that go stale
+# whenever the stubs change.
+untyped_calls_exclude = ["torch"]
 warn_unreachable = true
 
 [[tool.mypy.overrides]]

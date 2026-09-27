@@ -1,0 +1,15 @@
+# Per-cell exceedance thresholds, used by both the tail-aware objective in
+# Phase 3 and the GPD fits in Phase 4.
+#
+# exceedance_rate sets how many events each cell contributes, so tail
+# statistics are comparable between a wet tropical cell and a dry subtropical
+# one. At 2% of 6-hourly steps over 1979-2014 that is ~1050 events per cell,
+# comfortable for a GPD fit.
+#
+# floor stops a cell that is dry past the 98th percentile from getting a zero
+# threshold, which would make the tail weighting a no-op there.
+variable: total_precipitation_6hr
+exceedance_rate: 0.02
+floor: 0.1
+units_scale: 1000.0     # ERA5 stores precipitation in metres
+output: data/stats/thresholds_train.json
