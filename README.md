@@ -6,41 +6,54 @@ thing the large ones get wrong: **the tail**.
 [![ci](https://github.com/John-Amal/cirrus/actions/workflows/ci.yml/badge.svg)](https://github.com/John-Amal/cirrus/actions/workflows/ci.yml)
 [![weights](https://img.shields.io/badge/%F0%9F%A4%97%20weights-cirrus--mae--5625-blue)](https://huggingface.co/John-Amal/cirrus-mae-5625)
 
-> **Status: Phase 2 complete.** A 5M-parameter ViT is pretrained on 36 years
-> of ERA5 with a masked-autoencoder objective, in under three hours on a
-> laptop. Weights are on the
+> **Status: Phase 3 complete.** A 5M-parameter ViT pretrained on 36 years of
+> ERA5, then six precipitation heads fine-tuned on it to compare training
+> objectives. Weights are on the
 > [Hugging Face Hub](https://huggingface.co/John-Amal/cirrus-mae-5625).
 
 ![reconstruction](docs/reconstruction.png)
 
-## The result so far
+## The result
 
-The model reconstructs hidden patches of the atmosphere well: validation MSE
-**0.2385** in normalised units, against ~1.0 for predicting the mean. Skill
-tracks atmospheric predictability — geopotential at 250 hPa reaches 0.021,
-while precipitation is worst at 0.618, a thirty-fold spread.
+Six precipitation heads on one frozen backbone, differing only in the
+objective they were trained with. Ratio of predicted to observed 99.9th
+percentile, from a single draw of each model's predictive distribution --
+1.00 is right, below 1 means it cannot produce events as intense as reality:
 
-The interesting number is what happens to extreme precipitation:
+| objective | p99.9 ratio | MAE (mm) | exceedance Brier |
+| --- | --- | --- | --- |
+| L1 (point) | 0.74 | **0.314** | 0.0176 |
+| MSE (point) | 0.82 | 0.333 | 0.0180 |
+| CRPS (distribution) | 1.02 | 0.324 | **0.0136** |
+| tail-weighted CRPS | **1.00** | 0.355 | 0.0137 |
 
-| ratio, predicted / true | log1p space (where the loss is computed) | physical (mm / 6h) |
-|---|---|---|
-| mean | **1.00** | 0.76 |
-| p99 | 0.61 | 0.38 |
-| p99.9 | 0.60 | **0.30** |
+**Deterministic objectives lose a quarter of the intensity of the most
+extreme events. Distributional ones do not.** The effect is about twenty
+times the seed-to-seed spread, and it costs 3% of bulk accuracy while
+improving exceedance skill by 24%.
 
-Measured over masked patches. The model is *exactly unbiased* in the space it
-was optimised in, and reproduces **30% of the intensity** of the most extreme
-events in millimetres.
+Squared error is minimised by predicting the conditional mean, so a model
+that cannot place an event exactly is rewarded for spreading it out. A
+proper scoring rule over a predictive distribution removes that incentive:
+the model is free to say *it will rain hard somewhere near here* instead of
+being pushed toward drizzle everywhere.
 
-Two mechanisms compound. Squared error is minimised by predicting the
-conditional mean, so a model that cannot place an event precisely is rewarded
-for spreading it out. That under-dispersion is then amplified by the inverse
-transform: at the 99.9th percentile a ~1.0 log-unit error — unremarkable to
-the loss — is the difference between 12.1 mm and 3.7 mm of rain.
+Tail weighting on top of that improves the calibration of event *magnitude*
+(0.99–1.00 against 1.02–1.03) but not the skill at predicting event
+*occurrence*, and only in moderation — weighting aggressively enough to
+silence 98% of the data is worse than not weighting at all.
 
-**The loss function is nearly flat exactly where the extremes are.** That is
-a property of the objective rather than of this checkpoint, and it motivates
-everything in Phase 3.
+Full tables, seed spreads and caveats: [`docs/results/phase3.md`](docs/results/phase3.md).
+
+### Phase 2: why this was worth testing
+
+Pretraining reached 0.2385 validation MSE against ~1.0 for predicting the
+mean, with skill tracking atmospheric predictability — geopotential at
+250 hPa 0.021, precipitation 0.618. But its precipitation reconstructions
+were unbiased in the space the loss was computed in (mean ratio 1.00) and
+30% of the true intensity at the 99.9th percentile in millimetres. The loss
+was nearly flat exactly where the extremes were, which is what Phase 3 set
+out to fix.
 
 ## Why this project
 
@@ -100,12 +113,13 @@ for full attention and for a laptop.
 | 0 | Scaffolding, CI, training loop on synthetic data | done |
 | 1 | ERA5 pipeline, normalisation, windowing, augmentation | done |
 | 2 | Masked-autoencoder pretraining, published weights | done |
-| 3 | Fine-tuning: forecasting baseline, extremes head with a GPD-informed loss | next |
-| 4 | Benchmarking, ablations, out-of-distribution evaluation | |
+| 3 | Extremes head, four objectives compared across seeds | done |
+| 4 | GPD return levels, NWP baselines, out-of-distribution evaluation | next |
 | 5 | Export, serving, LLM agent interface | |
 
-Phase 3 compares MSE, L1, CRPS and a GPD-informed objective on the same
-frozen backbone. The 0.30 ratio above is the number to beat.
+Phase 4 turns amplitude ratios into return-level comparisons via per-cell
+GPD fits, adds persistence and climatology baselines, and evaluates on the
+held-out test years. Those years have not been touched.
 
 ## Development
 
