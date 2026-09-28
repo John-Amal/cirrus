@@ -152,6 +152,7 @@ def main(argv: list[str] | None = None) -> int:
     fine.add_argument(
         "--tag", default=None, help="suffix for the run directory, e.g. _p90"
     )
+    fine.add_argument("--seed", type=int, default=None, help="override the run seed")
 
     comp = subparsers.add_parser(
         "compare", help="score every trained arm on common metrics"
@@ -275,6 +276,8 @@ def main(argv: list[str] | None = None) -> int:
             arm = replace_field(arm, thresholds=str(args.thresholds))
         if args.tag is not None:
             arm = replace_field(arm, tag=args.tag)
+        if args.seed is not None:
+            arm = replace_field(arm, seed=args.seed)
 
         finetune(arm, data_config=args.data)
         return 0
