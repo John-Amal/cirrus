@@ -63,6 +63,8 @@ class FinetuneSpec:
 
     objective: str = "twcrps"
     pretrained: str = "runs/mae_small/best.pt"
+    thresholds: str = "data/stats/thresholds_train.json"
+    tag: str = ""  # distinguishes arms that differ by something other than objective
     freeze_backbone: bool = True
     head_depth: int = 2
     n_samples: int = 24  # CRPS spread term is O(n^2); 20-30 is the useful range
@@ -102,7 +104,7 @@ class FinetuneSpec:
     @property
     def run_name(self) -> str:
         """Directory name for this arm."""
-        return f"finetune_{self.objective}"
+        return f"finetune_{self.objective}{self.tag}"
 
 
 class PrecipitationTarget:
@@ -228,7 +230,6 @@ def finetune(
     spec: FinetuneSpec,
     data_config: str | Path = "configs/data/era5_5625.yaml",
     normalise_config: str | Path = "configs/data/normalise.yaml",
-    thresholds_path: str | Path = "data/stats/thresholds_train.json",
     variable: str = "total_precipitation_6hr",
 ) -> Path:
     """Train one arm and return its run directory."""
@@ -280,7 +281,7 @@ def finetune(
 
     thresholds = None
     if spec.objective == "twcrps":
-        loaded = Thresholds.load(thresholds_path)
+        loaded = Thresholds.load(spec.thresholds)
         thresholds = torch.as_tensor(loaded.values, dtype=torch.float32).to(device)
         print(
             f"thresholds: median {float(thresholds.median()):.2f} mm "

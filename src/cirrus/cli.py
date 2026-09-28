@@ -129,6 +129,10 @@ def main(argv: list[str] | None = None) -> int:
     thr.add_argument(
         "--config", type=Path, default=Path("configs/data/thresholds.yaml")
     )
+    thr.add_argument(
+        "--rate", type=float, default=None, help="override the exceedance rate"
+    )
+    thr.add_argument("--out", type=Path, default=None, help="override the output path")
 
     fine = subparsers.add_parser(
         "finetune", help="train a precipitation head on the frozen backbone"
@@ -142,6 +146,20 @@ def main(argv: list[str] | None = None) -> int:
     )
     fine.add_argument("--epochs", type=int, default=None)
     fine.add_argument("--max-steps", type=int, default=None)
+    fine.add_argument(
+        "--thresholds", type=Path, default=None, help="override the thresholds file"
+    )
+    fine.add_argument(
+        "--tag", default=None, help="suffix for the run directory, e.g. _p90"
+    )
+
+    comp = subparsers.add_parser(
+        "compare", help="score every trained arm on common metrics"
+    )
+    comp.add_argument("--runs", type=Path, default=Path("runs"))
+    comp.add_argument("--split", default="val", choices=["train", "val", "test"])
+    comp.add_argument("--batches", type=int, default=40)
+    comp.add_argument("--out", type=Path, default=Path("runs/comparison.json"))
 
     args = parser.parse_args(argv)
 
@@ -226,6 +244,17 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 0
 
+    if args.command == "compare":
+        from cirrus.eval.compare import compare
+
+        compare(
+            run_root=args.runs,
+            split=args.split,
+            batches=args.batches,
+            out_path=args.out,
+        )
+        return 0
+
     if args.command == "finetune":
         from dataclasses import replace as replace_field
 
@@ -242,11 +271,17 @@ def main(argv: list[str] | None = None) -> int:
             arm = replace_field(arm, epochs=args.epochs)
         if args.max_steps is not None:
             arm = replace_field(arm, max_steps_per_epoch=args.max_steps)
+        if args.thresholds is not None:
+            arm = replace_field(arm, thresholds=str(args.thresholds))
+        if args.tag is not None:
+            arm = replace_field(arm, tag=args.tag)
 
         finetune(arm, data_config=args.data)
         return 0
 
     if args.command == "thresholds":
+        from dataclasses import replace
+
         from cirrus.data.ingest import IngestSpec
         from cirrus.data.splits import Splits
         from cirrus.data.thresholds import ThresholdSpec, compute_thresholds
@@ -254,6 +289,10 @@ def main(argv: list[str] | None = None) -> int:
         try:
             data_spec = IngestSpec.from_yaml(args.data)
             threshold_spec = ThresholdSpec.from_yaml(args.config)
+            if args.rate is not None:
+                threshold_spec = replace(threshold_spec, exceedance_rate=args.rate)
+            if args.out is not None:
+                threshold_spec = replace(threshold_spec, output=str(args.out))
             splits = Splits.from_yaml(args.splits)
             thresholds = compute_thresholds(
                 data_spec.output, data_spec, splits.train, threshold_spec
