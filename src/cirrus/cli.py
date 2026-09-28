@@ -162,6 +162,13 @@ def main(argv: list[str] | None = None) -> int:
     comp.add_argument("--batches", type=int, default=40)
     comp.add_argument("--out", type=Path, default=Path("runs/comparison.json"))
 
+    fig = subparsers.add_parser("figure", help="render the objective comparison figure")
+    fig.add_argument("--runs", type=Path, default=Path("runs"))
+    fig.add_argument("--out", type=Path, default=Path("docs/objective_comparison.png"))
+    fig.add_argument("--split", default="val", choices=["train", "val", "test"])
+    fig.add_argument("--search-batches", type=int, default=20)
+    fig.add_argument("--seed", type=int, default=0, dest="figure_seed")
+
     args = parser.parse_args(argv)
 
     if args.command == "device":
@@ -242,6 +249,18 @@ def main(argv: list[str] | None = None) -> int:
         print(
             f"input mean {x.mean():.3f}  std {x.std():.3f}  "
             f"min {x.min():.2f}  max {x.max():.2f}"
+        )
+        return 0
+
+    if args.command == "figure":
+        from cirrus.eval.figures import comparison_figure
+
+        comparison_figure(
+            run_root=args.runs,
+            out_path=args.out,
+            split=args.split,
+            search_batches=args.search_batches,
+            seed=args.figure_seed,
         )
         return 0
 
