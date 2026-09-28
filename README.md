@@ -11,7 +11,13 @@ thing the large ones get wrong: **the tail**.
 > objectives. Weights are on the
 > [Hugging Face Hub](https://huggingface.co/John-Amal/cirrus-mae-5625).
 
-![reconstruction](docs/reconstruction.png)
+![objective comparison](docs/objective_comparison.png)
+
+*The same event, the same frozen backbone, the same data — only the
+training objective differs. Note the first panel on the bottom row: the
+CRPS model's predictive mean is as smooth as the deterministic arms above
+it. The same model sampled, beside it, is not. The intensity is in the
+distribution, not in the architecture.*
 
 ## The result
 
@@ -46,6 +52,12 @@ silence 98% of the data is worse than not weighting at all.
 Full tables, seed spreads and caveats: [`docs/results/phase3.md`](docs/results/phase3.md).
 
 ### Phase 2: why this was worth testing
+
+![reconstruction](docs/reconstruction.png)
+
+*Masked-autoencoder reconstruction. The model places the ITCZ correctly but
+smears it: the truth has isolated convective maxima, the reconstruction has a
+smooth ribbon. Squared error rewards exactly that.*
 
 Pretraining reached 0.2385 validation MSE against ~1.0 for predicting the
 mean, with skill tracking atmospheric predictability — geopotential at
