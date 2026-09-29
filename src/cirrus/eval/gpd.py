@@ -105,17 +105,37 @@ def fit_gpd(
 
     """
     finite = values[np.isfinite(values)]
-    exceedances = finite[finite > threshold] - threshold
-    rate = len(exceedances) / max(len(finite), 1)
+    return fit_from_exceedances(
+        finite[finite > threshold], threshold, len(finite), fixed_shape
+    )
 
-    if len(exceedances) < MIN_EXCEEDANCES:
-        return GpdFit(float("nan"), float("nan"), threshold, rate, len(exceedances))
+
+def fit_from_exceedances(
+    exceedances: np.ndarray,
+    threshold: float,
+    n_total: int,
+    fixed_shape: float | None = None,
+) -> GpdFit:
+    """Fit from exceedances that have already been extracted.
+
+    ``exceedances`` are the raw values above ``threshold`` (not the excesses),
+    and ``n_total`` is how many values they were drawn from, which sets the
+    exceedance rate. This exists because model samples are streamed: keeping
+    every value to hand to :func:`fit_gpd` would cost tens of gigabytes for
+    information the fit never uses.
+    """
+    excesses = exceedances[np.isfinite(exceedances)] - threshold
+    excesses = excesses[excesses > 0]
+    rate = len(excesses) / max(n_total, 1)
+
+    if len(excesses) < MIN_EXCEEDANCES:
+        return GpdFit(float("nan"), float("nan"), threshold, rate, len(excesses))
 
     if fixed_shape is None:
-        shape, _, scale = genpareto.fit(exceedances, floc=0.0)
+        shape, _, scale = genpareto.fit(excesses, floc=0.0)
     else:
-        shape, _, scale = genpareto.fit(exceedances, f0=fixed_shape, floc=0.0)
-    return GpdFit(float(shape), float(scale), threshold, rate, len(exceedances))
+        shape, _, scale = genpareto.fit(excesses, f0=fixed_shape, floc=0.0)
+    return GpdFit(float(shape), float(scale), threshold, rate, len(excesses))
 
 
 def bootstrap_return_levels(

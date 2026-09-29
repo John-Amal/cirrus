@@ -169,6 +169,14 @@ def main(argv: list[str] | None = None) -> int:
     fig.add_argument("--search-batches", type=int, default=20)
     fig.add_argument("--seed", type=int, default=0, dest="figure_seed")
 
+    ret = subparsers.add_parser(
+        "returnlevels", help="GPD return levels on the held-out test years"
+    )
+    ret.add_argument("--runs", type=Path, default=Path("runs"))
+    ret.add_argument("--draws", type=int, default=4)
+    ret.add_argument("--out", type=Path, default=Path("runs/returnlevels.json"))
+    ret.add_argument("--stationarity-cells", type=int, default=40)
+
     args = parser.parse_args(argv)
 
     if args.command == "device":
@@ -249,6 +257,17 @@ def main(argv: list[str] | None = None) -> int:
         print(
             f"input mean {x.mean():.3f}  std {x.std():.3f}  "
             f"min {x.min():.2f}  max {x.max():.2f}"
+        )
+        return 0
+
+    if args.command == "returnlevels":
+        from cirrus.eval.returnlevels import evaluate_return_levels
+
+        evaluate_return_levels(
+            run_root=args.runs,
+            draws=args.draws,
+            out_path=args.out,
+            stationarity_cells=args.stationarity_cells,
         )
         return 0
 
