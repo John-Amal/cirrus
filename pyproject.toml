@@ -16,6 +16,7 @@ dependencies = [
     "zarr>=2.18",
     "gcsfs>=2024.6",  # anonymous reads from public Google Cloud buckets
     "matplotlib>=3.8",  # diagnostics and README figures
+    "scipy>=1.11",  # generalised Pareto fitting
 ]
 
 [project.optional-dependencies]
@@ -26,6 +27,7 @@ dev = [
     "mypy>=1.11",
     "pre-commit>=3.8",
     "types-PyYAML",
+    "scipy-stubs",  # real type checking of the GPD calls, not an Any hole
 ]
 
 [project.scripts]
