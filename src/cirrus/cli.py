@@ -161,6 +161,7 @@ def main(argv: list[str] | None = None) -> int:
     comp.add_argument("--split", default="val", choices=["train", "val", "test"])
     comp.add_argument("--batches", type=int, default=40)
     comp.add_argument("--out", type=Path, default=Path("runs/comparison.json"))
+    comp.add_argument("--workers", type=int, default=4)
 
     fig = subparsers.add_parser("figure", help="render the objective comparison figure")
     fig.add_argument("--runs", type=Path, default=Path("runs"))
@@ -176,6 +177,7 @@ def main(argv: list[str] | None = None) -> int:
     ret.add_argument("--draws", type=int, default=4)
     ret.add_argument("--out", type=Path, default=Path("runs/returnlevels.json"))
     ret.add_argument("--stationarity-cells", type=int, default=40)
+    ret.add_argument("--workers", type=int, default=4)
 
     args = parser.parse_args(argv)
 
@@ -268,6 +270,7 @@ def main(argv: list[str] | None = None) -> int:
             draws=args.draws,
             out_path=args.out,
             stationarity_cells=args.stationarity_cells,
+            workers=args.workers,
         )
         return 0
 
@@ -291,6 +294,7 @@ def main(argv: list[str] | None = None) -> int:
             split=args.split,
             batches=args.batches,
             out_path=args.out,
+            workers=args.workers,
         )
         return 0
 

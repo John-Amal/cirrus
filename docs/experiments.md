@@ -68,3 +68,10 @@ Mac) or 2.5 deg (stronger headline result, needs a GPU allocation).
   error at p99.9 (MSE ~1.07, unremarkable) is 12.1 mm vs 3.7 mm in physical
   units. The loss is nearly flat exactly where the extremes are -- the
   motivation for the GPD-informed head, now measured rather than assumed.
+
+## 29-09-2026 - Phase 4:
+
+- Both evaluation paths were loader-bound with num_workers=0: ~4.6 s/batch
+  loading vs ~0.3 s compute. The Phase 2 throughput measurement had already
+  established this and it was not carried into eval code. Check the loader
+  before optimising anything else.

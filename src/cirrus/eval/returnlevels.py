@@ -37,7 +37,6 @@ cell and time -- would be tens of gigabytes for nothing.
 from __future__ import annotations
 
 import json
-from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -106,12 +105,17 @@ def sample_arm(
 ) -> list[CellSample]:
     """Stream the test period, keeping only exceedances per cell.
 
+    Grouping by cell happens once at the end, with a single sort, rather than
+    per batch. The per-batch version -- a Python loop over up to 2048 cells,
+    274 times -- was the difference between minutes and hours.
+
     Returns one entry per grid cell, flattened row-major.
     """
     n_cells = int(thresholds.numel())
-    collected: defaultdict[int, list[np.ndarray]] = defaultdict(list)
-    totals = np.zeros(n_cells, dtype=np.int64)
     flat_thresholds = thresholds.reshape(-1)
+    cell_parts: list[np.ndarray] = []
+    value_parts: list[np.ndarray] = []
+    n_total = 0
 
     for index, batch in enumerate(loader):
         torch.manual_seed(seed + index)
@@ -124,22 +128,28 @@ def sample_arm(
 
         flat = samples.reshape(samples.shape[0], n_cells, draws)
         above = flat > flat_thresholds[None, :, None]
-        totals += flat.shape[0] * draws
+        n_total += flat.shape[0] * draws
 
-        cells, values = torch.nonzero(above, as_tuple=False)[:, 1], flat[above]
-        cells_np = cells.cpu().numpy()
-        values_np = values.cpu().numpy()
-        for cell in np.unique(cells_np):
-            collected[int(cell)].append(values_np[cells_np == cell])
+        positions = torch.nonzero(above, as_tuple=False)
+        if positions.numel():
+            cell_parts.append(positions[:, 1].cpu().numpy())
+            value_parts.append(flat[above].cpu().numpy())
 
     empty = np.empty(0, dtype=np.float32)
-    return [
-        CellSample(
-            np.concatenate(collected[cell]) if collected[cell] else empty,
-            int(totals[cell]),
-        )
-        for cell in range(n_cells)
-    ]
+    if not cell_parts:
+        return [CellSample(empty, n_total) for _ in range(n_cells)]
+
+    cells = np.concatenate(cell_parts)
+    values = np.concatenate(value_parts).astype(np.float32)
+
+    # One stable sort, then split on the per-cell counts: O(N log N) once
+    # instead of a mask over every cell for every batch.
+    order = np.argsort(cells, kind="stable")
+    sorted_values = values[order]
+    counts = np.bincount(cells, minlength=n_cells)
+    boundaries = np.cumsum(counts)[:-1]
+    grouped = np.split(sorted_values, boundaries)
+    return [CellSample(group, n_total) for group in grouped]
 
 
 def fit_cells(
@@ -345,6 +355,7 @@ def evaluate_return_levels(
     variable: str = "total_precipitation_6hr",
     out_path: str | Path = "runs/returnlevels.json",
     stationarity_cells: int = 40,
+    workers: int = 4,
     seed: int = 0,
 ) -> dict[str, Any]:
     """Return levels for every arm on the test years, three shape variants."""
@@ -400,8 +411,17 @@ def evaluate_return_levels(
         raise ValueError(f"no finetuned arms under {run_root}")
 
     dataset = ERA5Dataset.from_configs(split="test", data=data_config)
+    # Workers matter more here than anywhere else: this reads the whole test
+    # period once per arm, and single-process loading from zarr is ~4.6 s per
+    # batch against ~0.3 s of compute. Without them the run is loader-bound
+    # by more than an order of magnitude.
     loader: DataLoader[dict[str, torch.Tensor]] = DataLoader(
-        dataset, batch_size=32, shuffle=False
+        dataset,
+        batch_size=32,
+        shuffle=False,
+        num_workers=workers,
+        persistent_workers=workers > 0,
+        prefetch_factor=4 if workers > 0 else None,
     )
     thresholds_tensor = torch.as_tensor(thresholds, dtype=torch.float32).to(device)
 

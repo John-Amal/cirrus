@@ -168,6 +168,7 @@ def compare(
     thresholds_path: str | Path = "data/stats/thresholds_train.json",
     variable: str = "total_precipitation_6hr",
     out_path: str | Path = "runs/comparison.json",
+    workers: int = 4,
 ) -> list[ArmScores]:
     """Score every trained arm and print the comparison table."""
     device = get_device()
@@ -180,7 +181,12 @@ def compare(
 
     dataset = ERA5Dataset.from_configs(split=split, data=data_config)
     loader: DataLoader[dict[str, torch.Tensor]] = DataLoader(
-        dataset, batch_size=32, shuffle=False
+        dataset,
+        batch_size=32,
+        shuffle=False,
+        num_workers=workers,
+        persistent_workers=workers > 0,
+        prefetch_factor=4 if workers > 0 else None,
     )
 
     store = xr.open_zarr(data_spec.output, chunks=None)
