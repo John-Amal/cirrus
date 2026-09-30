@@ -24,6 +24,11 @@ how training objectives shape the representation of **extremes** in
 data-driven weather models. It is released as a reproducible, inspectable
 baseline, not as a competitor to operational systems.
 
+It has since been used as a frozen encoder for the study summarised under
+[What it has been used for](#what-it-has-been-used-for) below, which found
+that models trained with squared error imply a precipitation distribution
+with a finite upper bound.
+
 ![reconstruction](reconstruction.png)
 
 ## What it is
@@ -101,10 +106,43 @@ This is a property of the objective, not a defect of this particular
 checkpoint. Any head trained with mean-squared error on log-transformed
 precipitation inherits it, however good the encoder.
 
+## What it has been used for
+
+Six precipitation heads were fine-tuned on this encoder, frozen, differing
+only in their training objective, and evaluated on held-out years
+(2017–2022). Fitting a generalised Pareto to each model's implied
+climatology gives the shape parameter ξ, which governs how the tail decays:
+
+| head objective | 20-year return level, model / observed | fitted ξ |
+| --- | --- | --- |
+| L1 (point) | 0.62 | −0.134 |
+| MSE (point) | 0.70 | −0.089 |
+| CRPS (distribution) | 1.22 | +0.074 |
+| tail-weighted CRPS | 1.14 | +0.060 |
+| *observations* | *1.00* | *+0.002* |
+
+Negative ξ means a distribution with a **finite upper bound**: the
+deterministic heads imply precipitation cannot exceed a ceiling. That is the
+wrong kind of tail, not merely a small one, and it is why their deficit grows
+with return period while the distributional heads stay flat.
+
+The ordering holds under three treatments of the shape parameter and across
+three seeds. Observed return levels carry block-bootstrap intervals of ±12%
+to ±21%, so the deterministic deficit is established while the distributional
+heads' small excess is not distinguishable from zero.
+
+Full analysis:
+[Phase 3](https://github.com/John-Amal/cirrus/blob/main/docs/results/phase3.md),
+[Phase 4](https://github.com/John-Amal/cirrus/blob/main/docs/results/phase4.md).
+
+Note that these are properties of the **heads and their objectives**, not of
+this encoder. The encoder was held frozen and identical throughout, which is
+what makes the comparison attributable to the objective.
+
 ## Intended use
 
 - A pretrained encoder to fine-tune for downstream tasks on coarse-resolution
-  global fields.
+  global fields; the study above is a worked example, with the code public.
 - A reproducible baseline for studying how training objectives affect the
   representation of extremes.
 - Teaching and experimentation: the whole pipeline trains in hours on a
