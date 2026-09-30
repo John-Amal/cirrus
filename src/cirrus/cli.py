@@ -179,6 +179,15 @@ def main(argv: list[str] | None = None) -> int:
     ret.add_argument("--stationarity-cells", type=int, default=40)
     ret.add_argument("--workers", type=int, default=4)
 
+    clim = subparsers.add_parser(
+        "climatology", help="build the climatological reference distribution"
+    )
+    clim.add_argument("--data", type=Path, default=Path("configs/data/era5_5625.yaml"))
+    clim.add_argument("--splits", type=Path, default=Path("configs/data/splits.yaml"))
+    clim.add_argument(
+        "--out", type=Path, default=Path("data/stats/climatology_train.npz")
+    )
+
     args = parser.parse_args(argv)
 
     if args.command == "device":
@@ -260,6 +269,27 @@ def main(argv: list[str] | None = None) -> int:
             f"input mean {x.mean():.3f}  std {x.std():.3f}  "
             f"min {x.min():.2f}  max {x.max():.2f}"
         )
+        return 0
+
+    if args.command == "climatology":
+        from cirrus.data.ingest import IngestSpec as _IngestSpec
+        from cirrus.data.splits import Splits as _Splits
+        from cirrus.eval.baselines import build_climatology
+
+        try:
+            climatology_spec = _IngestSpec.from_yaml(args.data)
+            climatology_splits = _Splits.from_yaml(args.splits)
+        except ValueError as err:
+            print(f"error: {err}", file=sys.stderr)
+            return 1
+        built = build_climatology(
+            climatology_spec.output, climatology_spec, climatology_splits.train
+        )
+        print(
+            f"climatology over {built.meta['n_steps']:,} steps, "
+            f"{built.meta['n_levels']} quantile levels per cell and month"
+        )
+        print(f"written: {built.save(args.out)}")
         return 0
 
     if args.command == "returnlevels":
