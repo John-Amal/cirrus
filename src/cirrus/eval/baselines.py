@@ -37,11 +37,16 @@ from cirrus.data.ingest import IngestSpec, check_layout
 from cirrus.data.splits import Period
 
 # Dense through the bulk, then logarithmically dense toward 1 so the far tail
-# is resolved: the last level is 1 - 3e-5, about one step in 33,000.
+# is resolved: the last level is 1 - 1e-6.
+#
+# Levels alone cannot lift the ceiling past the training-period maximum for
+# that cell and month -- a quantile of a finite sample is bounded by its
+# largest member. Extending them resolves the approach to that maximum; it
+# does not let a climatological sample exceed anything ever observed.
 QUANTILE_LEVELS = np.concatenate(
     [
         np.linspace(0.0005, 0.99, 400),
-        1.0 - np.logspace(-2, -4.5, 60),
+        1.0 - np.logspace(-2, -6, 100),
     ]
 )
 

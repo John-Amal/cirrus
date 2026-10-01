@@ -30,6 +30,76 @@ Shape estimated freely, per cell, on each side. Seed repeats of `crps` and
 Distributional ones are within 14%**, and the tail-weighted variants within
 2–12%.
 
+## Baselines
+
+Two references, chosen because they fail in opposite ways.
+
+| | 20-year return level, model / observed | fitted ξ | MAE (mm) | CRPS | Brier |
+| --- | --- | --- | --- | --- | --- |
+| persistence | **1.00** | +0.002 | 0.399 | 0.399 | 0.0241 |
+| climatology | 0.96 | −0.017 | 0.695 | 0.448 | 0.0230 |
+| best trained arm | 1.02–1.09 | +0.055 | 0.314 | 0.224 | 0.0136 |
+| *observations* | *1.00* | *+0.002* | — | — | — |
+
+**Persistence doubles as an end-to-end check of the analysis.** It carries the
+last observed field forward, so it feeds observations through the entire
+apparatus — sampler, exceedance extraction, per-cell GPD fit, return level —
+and emerges at 1.00 / 1.00 / 1.00 with ξ = +0.002 against an observed
++0.002. Any error in the sampling, grouping, rate calculation or fitting
+would have shown up as a deviation. It did not.
+
+**It also disposes of a tempting misreading.** Persistence reproduces the
+observed tail perfectly at every quantile including the maximum, while
+scoring worse than every trained arm on CRPS and Brier. Reproducing the tail
+is therefore trivially achievable with no forecasting skill whatsoever. The
+distributional arms' tail performance means something only because they also
+win decisively on the probabilistic scores.
+
+**Climatology is the no-skill reference**, drawing from what each cell does in
+each month historically and ignoring the input entirely. Every trained arm
+beats it comfortably on every metric — the first direct evidence that the
+models learned something about the atmosphere rather than about geography and
+season. Its MAE of 0.695 against 0.314 for the best arm is the margin.
+
+One detail worth noting: at a six-hour lead, persistence beats climatology on
+MAE by a wide margin (0.399 against 0.695) but is no better at predicting
+exceedance *occurrence* (Brier 0.0241 against 0.0230). The two baselines fail
+differently, which is why both are reported.
+
+## Is the test period's tail heavier?
+
+Climatology is built from 1979–2014 and scored on 2017–2022, so it
+under-predicts if the test period is genuinely heavier. Comparing observed
+return levels between the periods, through the identical fit, gives a ratio
+of **1.04** at every return period (fixed shape).
+
+Whether that is a trend or interannual variability was tested directly: the
+training record was cut into six consecutive six-year windows — the same
+length as the test period — and each compared against the full-record fit.
+None can differ from that reference for a forced reason, so their spread is
+what variability alone produces in a window this short. **They span
+0.97–1.03.**
+
+The test period's 1.04 sits just outside that range. Suggestive of a trend,
+but one percentage point beyond a range estimated from six windows, and the
+windows are spatially averaged over correlated cells, so the true spread is
+wider than the six samples show. The honest statement is that the test
+period's tail is about 4% heavier, marginally above what six-year windows
+span within the training record, and **not separable from internal
+variability at this sample size**.
+
+This does not affect the comparison between arms. A shift in the reference
+moves every arm equally: the deterministic arms remain at 0.62–0.80 and the
+distributional arms at 0.99–1.09 regardless.
+
+Climatology's 0.96 has a second cause as well. A resampling climatology
+cannot produce a value larger than the largest ever observed in that cell and
+month, and **the training-period maximum lies below the observed 20-year
+return level in 39% of cells**. Extending the stored quantile levels from
+1 − 3×10⁻⁵ to 1 − 10⁻⁶ moved this only from 42% to 39%, as it must: finer
+levels resolve the approach to the sample maximum, they do not lift it. Both
+mechanisms contribute and neither dominates.
+
 ## The mechanism: deterministic training implies a bounded tail
 
 The fitted shape parameters are the more interesting result. Observations
@@ -100,8 +170,10 @@ of them.
 
 ## What this does not establish
 
-- **Nothing about operational skill.** No NWP baseline has been run. The
-  comparison is between training objectives on one backbone.
+- **Nothing about operational skill.** Persistence and climatology are the
+  only baselines; no NWP forecast has been compared against. Beating
+  climatology shows the models learned something about the atmosphere, not
+  that they are competitive with an operational system.
 - **Nothing about a warming climate.** All of this is within the historical
   record. Out-of-distribution evaluation on storyline simulations is the next
   step.
@@ -116,7 +188,9 @@ of them.
 
 ```bash
 cirrus thresholds
+cirrus climatology
 ./scripts/run_finetune_arms.sh
 ./scripts/run_seed_sweep.sh
+cirrus compare
 cirrus returnlevels
 ```

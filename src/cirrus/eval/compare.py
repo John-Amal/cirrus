@@ -51,8 +51,14 @@ from cirrus.data.ingest import IngestSpec
 from cirrus.data.normalise import Normaliser, NormaliseSpec
 from cirrus.data.thresholds import Thresholds
 from cirrus.device import device_report, get_device
+from cirrus.eval.baselines import Climatology, ClimatologyBaseline
+from cirrus.eval.samplers import (
+    Sampler,
+    climatology_sampler,
+    persistence_sampler,
+    trained_sampler,
+)
 from cirrus.losses.crps import crps_sample, mean_score, threshold_weighted_crps
-from cirrus.models.patch_embed import flatten_time
 from cirrus.models.vit import ViT
 from cirrus.train.finetune import (
     FinetuneSpec,
@@ -87,9 +93,7 @@ def load_arm(
 @torch.no_grad()
 def score_arm(
     label: str,
-    spec: FinetuneSpec,
-    head: torch.nn.Module,
-    backbone: ViT,
+    sampler: Sampler,
     loader: DataLoader[dict[str, torch.Tensor]],
     device: torch.device,
     to_mm: PrecipitationTarget,
@@ -99,7 +103,7 @@ def score_arm(
     batches: int,
     seed: int = 0,
 ) -> ArmScores:
-    """Score one arm on a fixed subset of data."""
+    """Score anything that can produce samples, on a fixed subset of data."""
     totals: dict[str, float] = {"mae_mm": 0.0, "crps": 0.0, "twcrps": 0.0, "brier": 0.0}
     seen = 0
     truth_parts, mean_parts, draw_parts = [], [], []
@@ -108,14 +112,8 @@ def score_arm(
         if index >= batches:
             break
         torch.manual_seed(seed + index)  # identical draws for every arm
-        x = flatten_time(batch["input"]).to(device)
         target = to_mm(batch["target"][:, 0, channel].to(device))
-
-        tokens = backbone(x)
-        if spec.is_distributional:
-            samples = head(tokens).sample(spec.n_samples)
-        else:
-            samples = head(tokens).unsqueeze(-1)
+        samples = sampler(batch)
 
         fair = samples.shape[-1] > 1  # the fair estimator needs two samples
         predicted_mean = samples.mean(dim=-1)
@@ -168,6 +166,7 @@ def compare(
     thresholds_path: str | Path = "data/stats/thresholds_train.json",
     variable: str = "total_precipitation_6hr",
     out_path: str | Path = "runs/comparison.json",
+    climatology_path: str | Path = "data/stats/climatology_train.npz",
     workers: int = 4,
 ) -> list[ArmScores]:
     """Score every trained arm and print the comparison table."""
@@ -206,6 +205,19 @@ def compare(
         raise ValueError(f"no finetuned arms found under {run_root}")
 
     results: list[ArmScores] = []
+
+    # Baselines first, so every table starts with the reference points.
+    grid: tuple[int, int] = (int(thresholds.shape[0]), int(thresholds.shape[1]))
+    samplers: list[tuple[str, Sampler]] = [
+        ("persistence", persistence_sampler(to_mm, channel, device))
+    ]
+    climatology_file = Path(climatology_path)
+    if climatology_file.exists():
+        baseline = ClimatologyBaseline(Climatology.load(climatology_file), device)
+        samplers.append(("climatology", climatology_sampler(baseline, grid, device)))
+    else:
+        print(f"no climatology at {climatology_file}; run 'cirrus climatology'")
+
     backbone: ViT | None = None
     for run_dir in run_dirs:
         arm = run_dir.name.removeprefix("finetune_")
@@ -218,13 +230,14 @@ def compare(
             backbone = backbone.to(device).eval()
 
         spec, head = load_arm(run_dir, backbone, device)
-        print(f"scoring {arm}...")
+        samplers.append((arm, trained_sampler(spec, head, backbone, device)))
+
+    for label, sampler in samplers:
+        print(f"scoring {label}...")
         results.append(
             score_arm(
-                arm,
-                spec,
-                head,
-                backbone,
+                label,
+                sampler,
                 loader,
                 device,
                 to_mm,

@@ -52,6 +52,7 @@ from cirrus.data.normalise import Normaliser, NormaliseSpec
 from cirrus.data.splits import Splits
 from cirrus.data.thresholds import Thresholds
 from cirrus.device import device_report, get_device
+from cirrus.eval.baselines import Climatology, ClimatologyBaseline
 from cirrus.eval.compare import load_arm
 from cirrus.eval.gpd import (
     GpdFit,
@@ -59,7 +60,12 @@ from cirrus.eval.gpd import (
     fit_from_exceedances,
     fit_gpd,
 )
-from cirrus.models.patch_embed import flatten_time
+from cirrus.eval.samplers import (
+    Sampler,
+    climatology_sampler,
+    persistence_sampler,
+    trained_sampler,
+)
 from cirrus.models.vit import ViT
 from cirrus.train.finetune import FinetuneSpec, PrecipitationTarget, load_backbone
 
@@ -92,15 +98,10 @@ def observed_field(
 
 @torch.no_grad()
 def sample_arm(
-    spec: FinetuneSpec,
-    head: torch.nn.Module,
-    backbone: ViT,
+    sampler: Sampler,
     loader: DataLoader[dict[str, torch.Tensor]],
     device: torch.device,
-    to_mm: PrecipitationTarget,
-    channel: int,
     thresholds: torch.Tensor,
-    draws: int,
     seed: int = 0,
 ) -> list[CellSample]:
     """Stream the test period, keeping only exceedances per cell.
@@ -119,13 +120,8 @@ def sample_arm(
 
     for index, batch in enumerate(loader):
         torch.manual_seed(seed + index)
-        x = flatten_time(batch["input"]).to(device)
-        tokens = backbone(x)
-        if spec.is_distributional:
-            samples = head(tokens).sample(draws)
-        else:
-            samples = head(tokens).unsqueeze(-1).expand(-1, -1, -1, draws)
-
+        samples = sampler(batch)
+        draws = samples.shape[-1]
         flat = samples.reshape(samples.shape[0], n_cells, draws)
         above = flat > flat_thresholds[None, :, None]
         n_total += flat.shape[0] * draws
@@ -272,6 +268,101 @@ def observed_uncertainty(
     return float(np.median(widths)) if widths else float("nan")
 
 
+def period_comparison(
+    train_fits: list[GpdFit],
+    test_fits: list[GpdFit],
+    weights: np.ndarray,
+) -> dict[str, float]:
+    """Observed return levels in the test period relative to the training one.
+
+    Both periods go through the identical fit, so this isolates whether the
+    tail itself differs between 1979-2014 and 2017-2022. It matters for
+    reading the climatology baseline: a baseline built from training years
+    and scored on test years will under-predict if the test period is
+    genuinely heavier, and that is a property of the climate rather than a
+    defect of the baseline.
+
+    Return levels are rate-aware, so the unequal record lengths do not bias
+    the comparison.
+    """
+    ratios: dict[str, float] = {}
+    for years in RETURN_YEARS:
+        with np.errstate(invalid="ignore", divide="ignore"):
+            ratio = return_levels(test_fits, years) / return_levels(train_fits, years)
+        ratios[f"{years:g}y"] = weighted_median(ratio, weights)
+    return ratios
+
+
+def truncation_check(
+    climatology_path: str | Path,
+    test_fits: list[GpdFit],
+    years: float = 20.0,
+) -> float:
+    """Share of cells where the climatology table cannot reach the test level.
+
+    The stored quantiles stop at the top level, so a climatological sample
+    can never exceed roughly the wettest value in the training record. Where
+    that ceiling sits below the observed return level, the baseline's
+    shortfall is a resolution artifact rather than a statement about the
+    climate. This separates the two explanations.
+    """
+    path = Path(climatology_path)
+    if not path.exists():
+        return float("nan")
+
+    climatology = Climatology.load(path)
+    ceiling = climatology.quantiles[:, :, -1].max(axis=0)  # best case over months
+    observed = return_levels(test_fits, years)
+    usable = np.isfinite(observed)
+    return float((ceiling[usable] < observed[usable]).mean())
+
+
+def block_variability(
+    train_field: np.ndarray,
+    train_times: np.ndarray,
+    thresholds: np.ndarray,
+    weights: np.ndarray,
+    reference_fits: list[GpdFit],
+    fixed_shapes: np.ndarray,
+    block_years: int = 6,
+    years: float = 20.0,
+) -> dict[str, Any]:
+    """How much a short window's tail wanders, from internal variability alone.
+
+    The training record is cut into consecutive windows the same length as
+    the test period, and each is compared against the full-record fit. None
+    of them can differ from that reference for a *forced* reason, so the
+    spread is what interannual variability alone produces in a window this
+    short.
+
+    A test-period ratio inside that spread is not evidence of a trend. One
+    outside it is, and a monotone drift across the blocks themselves would be
+    a trend visible within the training data.
+    """
+    years_available = train_times.astype("datetime64[Y]").astype(int) + 1970
+    first, last = int(years_available.min()), int(years_available.max())
+    reference = return_levels(reference_fits, years)
+
+    blocks: list[dict[str, float]] = []
+    for start in range(first, last - block_years + 2, block_years):
+        rows = (years_available >= start) & (years_available < start + block_years)
+        if rows.sum() < 1000:
+            continue
+        cells = field_to_cells(train_field[rows], thresholds)
+        fits = fit_cells(cells, thresholds, fixed_shapes)
+        with np.errstate(invalid="ignore", divide="ignore"):
+            ratio = return_levels(fits, years) / reference
+        blocks.append({"start": float(start), "ratio": weighted_median(ratio, weights)})
+
+    values = np.array([block["ratio"] for block in blocks])
+    return {
+        "blocks": blocks,
+        "min": float(values.min()) if values.size else float("nan"),
+        "max": float(values.max()) if values.size else float("nan"),
+        "spread": float(values.max() - values.min()) if values.size else float("nan"),
+    }
+
+
 def shape_stationarity(
     train_values: np.ndarray,
     test_values: np.ndarray,
@@ -354,6 +445,7 @@ def evaluate_return_levels(
     thresholds_path: str | Path = "data/stats/thresholds_train.json",
     variable: str = "total_precipitation_6hr",
     out_path: str | Path = "runs/returnlevels.json",
+    climatology_path: str | Path = "data/stats/climatology_train.npz",
     stationarity_cells: int = 40,
     workers: int = 4,
     seed: int = 0,
@@ -369,7 +461,7 @@ def evaluate_return_levels(
     to_mm = PrecipitationTarget(normaliser, variable)
     thresholds_obj = Thresholds.load(thresholds_path)
     thresholds = thresholds_obj.values
-    grid = thresholds.shape
+    grid: tuple[int, int] = (int(thresholds.shape[0]), int(thresholds.shape[1]))
 
     store = xr.open_zarr(data_spec.output, chunks=None)
     latitudes = np.asarray(store["latitude"].values, dtype=np.float32)
@@ -378,6 +470,11 @@ def evaluate_return_levels(
     print(f"observations: training {splits.train.start}..{splits.train.end}")
     train_field = observed_field(
         data_spec.output, variable, splits.train.start, splits.train.end
+    )
+    train_times = (
+        xr.open_zarr(data_spec.output, chunks=None)["time"]
+        .sel(time=slice(splits.train.start, splits.train.end))
+        .values
     )
     train_cells = field_to_cells(train_field, thresholds)
     train_fits = fit_cells(train_cells, thresholds, None)
@@ -397,11 +494,58 @@ def evaluate_return_levels(
     stationarity = shape_stationarity(
         train_field, test_field, thresholds, stationarity_cells, seed
     )
+    variability = block_variability(
+        train_field,
+        train_times,
+        thresholds,
+        weights,
+        fit_cells(train_cells, thresholds, shapes_train),
+        shapes_train,
+    )
     del train_field
     print(
         f"shape stationarity: training xi inside the test bootstrap interval "
         f"for {stationarity['coverage']:.0%} of {int(stationarity['cells_compared'])} "
         f"cells (median |difference| {stationarity['median_abs_difference']:.3f})"
+    )
+
+    # Fit observations once per shape variant and reuse. Refitting 2,048
+    # cells is seconds of maximum likelihood each time, and the naive
+    # arrangement did it nine times over.
+    fixed_by_variant: dict[str, np.ndarray | None] = {
+        "free": None,
+        "fixed_train": shapes_train,
+        "fixed_global": np.full(grid, shape_global),
+    }
+    observed_fits_by_variant = {
+        name: fit_cells(test_cells, thresholds, fixed)
+        for name, fixed in fixed_by_variant.items()
+    }
+    train_fits_fixed = fit_cells(train_cells, thresholds, shapes_train)
+
+    trend_free = period_comparison(
+        train_fits, observed_fits_by_variant["free"], weights
+    )
+    trend_fixed = period_comparison(
+        train_fits_fixed, observed_fits_by_variant["fixed_train"], weights
+    )
+    truncated = truncation_check(climatology_path, observed_fits_by_variant["free"])
+    print(
+        "six-year windows within training vary over "
+        f"{variability['min']:.2f}–{variability['max']:.2f} "
+        f"({len(variability['blocks'])} windows); anything inside that range "
+        "is internal variability"
+    )
+    print(
+        "observed test/training return level: "
+        + ", ".join(f"{k} {v:.2f}" for k, v in trend_free.items())
+        + " (free shape), "
+        + ", ".join(f"{k} {v:.2f}" for k, v in trend_fixed.items())
+        + " (fixed shape)"
+    )
+    print(
+        f"climatology table ceiling below the observed 20y level in "
+        f"{truncated:.1%} of cells"
     )
 
     run_dirs = sorted(
@@ -425,6 +569,18 @@ def evaluate_return_levels(
     )
     thresholds_tensor = torch.as_tensor(thresholds, dtype=torch.float32).to(device)
 
+    samplers: list[tuple[str, Sampler]] = [
+        ("persistence", persistence_sampler(to_mm, channel, device))
+    ]
+    climatology_file = Path(climatology_path)
+    if climatology_file.exists():
+        baseline = ClimatologyBaseline(Climatology.load(climatology_file), device)
+        samplers.append(
+            ("climatology", climatology_sampler(baseline, grid, device, draws))
+        )
+    else:
+        print(f"no climatology at {climatology_file}; run 'cirrus climatology'")
+
     arm_cells: dict[str, list[CellSample]] = {}
     backbone: ViT | None = None
     for run_dir in run_dirs:
@@ -438,19 +594,11 @@ def evaluate_return_levels(
             )
             backbone = backbone.to(device).eval()
         spec, head = load_arm(run_dir, backbone, device)
-        print(f"sampling {arm} over the test years ({draws} draws per step)...")
-        arm_cells[arm] = sample_arm(
-            spec,
-            head,
-            backbone,
-            loader,
-            device,
-            to_mm,
-            channel,
-            thresholds_tensor,
-            draws,
-            seed,
-        )
+        samplers.append((arm, trained_sampler(spec, head, backbone, device, draws)))
+
+    for label, sampler in samplers:
+        print(f"sampling {label} over the test years ({draws} draws per step)...")
+        arm_cells[label] = sample_arm(sampler, loader, device, thresholds_tensor, seed)
 
     observed_widths = {
         f"{years:g}y": observed_uncertainty(test_field, thresholds, years, seed=seed)
@@ -471,18 +619,15 @@ def evaluate_return_levels(
             "shape_global": shape_global,
         },
         "stationarity": stationarity,
+        "internal_variability": variability,
+        "period_comparison": {"free": trend_free, "fixed_train": trend_fixed},
+        "climatology_truncated_fraction": truncated,
         "variants": {},
     }
 
     for variant in SHAPE_VARIANTS:
-        if variant == "free":
-            fixed = None
-        elif variant == "fixed_train":
-            fixed = shapes_train
-        else:
-            fixed = np.full(grid, shape_global)
-
-        observed_fits = fit_cells(test_cells, thresholds, fixed)
+        fixed = fixed_by_variant[variant]
+        observed_fits = observed_fits_by_variant[variant]
         entry: dict[str, Any] = {"arms": {}}
         for arm, cells in arm_cells.items():
             model_fits = fit_cells(cells, thresholds, fixed)
