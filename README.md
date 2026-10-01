@@ -39,12 +39,21 @@ The consequence, as a ratio of modelled to observed return level:
 | MSE (point) | 0.78 | 0.73 | **0.70** | −0.089 |
 | CRPS (distribution) | 1.09 | 1.15 | 1.22 | +0.074 |
 | tail-weighted CRPS | 1.05 | 1.09 | **1.14** | +0.060 |
+| persistence *(baseline)* | 1.00 | 1.00 | 1.00 | +0.002 |
+| climatology *(baseline)* | 0.96 | 0.94 | 0.93 | −0.017 |
 | *observations* | *1.00* | *1.00* | *1.00* | *+0.002* |
 
 Deterministic objectives miss the 20-year return level by 30–38%, and miss it
 *worse the further out you go* — the signature of a bounded tail diverging
 from an unbounded one. Distributional objectives stay roughly flat across
 return periods.
+
+Note the persistence row. Carrying the last observed field forward reproduces
+the tail *exactly* — it is observations, offset six hours — while scoring
+worse than every trained arm on CRPS and on exceedance Brier score.
+Reproducing extremes is trivial without skill; doing both is not. It also
+serves as an end-to-end check that the analysis itself is sound, since it
+passes observations through the whole apparatus and returns 1.00.
 
 The ordering holds under three different treatments of the shape parameter
 and across three seeds. Observed return levels carry block-bootstrap
