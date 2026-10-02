@@ -21,7 +21,7 @@ dependencies = [
 
 [project.optional-dependencies]
 hub = ["huggingface_hub>=0.24"]  # only needed to publish the checkpoint
-serve = ["onnx>=1.16", "onnxruntime>=1.18", "fastapi>=0.110", "uvicorn>=0.29"]
+serve = ["onnx>=1.16", "onnxruntime>=1.18", "onnxscript>=0.1", "fastapi>=0.110", "uvicorn>=0.29"]
 dev = [
     "pytest>=8.0",
     "ruff==0.16.8",  # pinned: lint tools are pinned, libraries float

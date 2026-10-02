@@ -188,6 +188,14 @@ def main(argv: list[str] | None = None) -> int:
         "--out", type=Path, default=Path("data/stats/climatology_train.npz")
     )
 
+    srv = subparsers.add_parser("serve", help="run the inference API")
+    srv.add_argument("--arm", default="twcrps_p90")
+    srv.add_argument(
+        "--model", type=Path, default=None, help="defaults to serve/<arm>.pt"
+    )
+    srv.add_argument("--host", default="127.0.0.1")
+    srv.add_argument("--port", type=int, default=8000)
+
     exp = subparsers.add_parser(
         "export", help="export a trained arm to TorchScript and ONNX"
     )
@@ -280,6 +288,25 @@ def main(argv: list[str] | None = None) -> int:
             f"input mean {x.mean():.3f}  std {x.std():.3f}  "
             f"min {x.min():.2f}  max {x.max():.2f}"
         )
+        return 0
+
+    if args.command == "serve":
+        import uvicorn
+
+        from cirrus.serve.api import create_app, load_state
+
+        model_path = args.model or Path("serve") / f"{args.arm}.pt"
+        if not model_path.exists():
+            print(
+                f"error: {model_path} not found; run 'cirrus export' first",
+                file=sys.stderr,
+            )
+            return 1
+
+        state = load_state(model_path, arm=args.arm)
+        print(f"serving {args.arm} on http://{args.host}:{args.port}")
+        print(f"interactive docs at http://{args.host}:{args.port}/docs")
+        uvicorn.run(create_app(state), host=args.host, port=args.port)
         return 0
 
     if args.command == "export":

@@ -1,0 +1,9 @@
+data/*
+!data/stats
+runs/
+.git/
+.venv/
+__pycache__/
+*.pt
+!serve/*.pt
+release/
