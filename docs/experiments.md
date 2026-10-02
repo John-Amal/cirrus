@@ -75,3 +75,13 @@ Mac) or 2.5 deg (stronger headline result, needs a GPU allocation).
   loading vs ~0.3 s compute. The Phase 2 throughput measurement had already
   established this and it was not carried into eval code. Check the loader
   before optimising anything else.
+
+
+## 01-10-2026 - Phase 5:
+
+- Export: TorchScript is bit-identical (max diff 0.00e+00), 9.9 ms/batch CPU.
+  Dynamic int8 quantisation is both less accurate (max diff 2.1e-01, vs a
+  shape parameter of order 0.02) and slower (11.1 ms) on Apple Silicon: the
+  matmuls are too small for int8 to pay for its own overhead. Not used.
+- torch.jit.trace/freeze are deprecated in favour of torch.export; migration
+  is future work, TorchScript still has the widest deployment support.

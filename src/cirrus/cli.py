@@ -188,6 +188,17 @@ def main(argv: list[str] | None = None) -> int:
         "--out", type=Path, default=Path("data/stats/climatology_train.npz")
     )
 
+    exp = subparsers.add_parser(
+        "export", help="export a trained arm to TorchScript and ONNX"
+    )
+    exp.add_argument("--arm", default="twcrps_p90")
+    exp.add_argument("--runs", type=Path, default=Path("runs"))
+    exp.add_argument("--out", type=Path, default=Path("serve"))
+    exp.add_argument(
+        "--onnx", action="store_true", help="also export ONNX (needs the serve extra)"
+    )
+    exp.add_argument("--quantise", action="store_true")
+
     args = parser.parse_args(argv)
 
     if args.command == "device":
@@ -270,6 +281,53 @@ def main(argv: list[str] | None = None) -> int:
             f"min {x.min():.2f}  max {x.max():.2f}"
         )
         return 0
+
+    if args.command == "export":
+        from cirrus.serve.export import (
+            PARAMETER_NAMES,
+            ExportReport,
+            build_predictor,
+            example_input,
+            export_onnx,
+            export_torchscript,
+            measure_latency,
+            quantise,
+        )
+
+        run_dir = args.runs / f"finetune_{args.arm}"
+        if not (run_dir / "best.pt").exists():
+            print(f"error: no checkpoint in {run_dir}", file=sys.stderr)
+            return 1
+
+        arm_spec, predictor = build_predictor(run_dir)
+        example = example_input(predictor)
+        outputs = PARAMETER_NAMES[predictor.kind]
+        print(f"{args.arm}: {predictor.kind} head, outputs {', '.join(outputs)}")
+        print(f"pytorch baseline: {measure_latency(predictor, example) * 1000:.1f} ms")
+
+        reports: list[ExportReport] = [
+            export_torchscript(predictor, args.out / f"{args.arm}.pt", example)
+        ]
+        if args.onnx:
+            reports.append(
+                export_onnx(predictor, args.out / f"{args.arm}.onnx", example)
+            )
+        if args.quantise:
+            quantised_report = quantise(predictor, example)
+            if quantised_report is None:
+                print("quantisation: no backend in this PyTorch build, skipped")
+            else:
+                reports.append(quantised_report)
+
+        print(f"\n{'format':14s} {'max diff':>10s} {'ms/batch':>10s}  status")
+        for report in reports:
+            status = "ok" if report.is_equivalent else "DIVERGED"
+            print(
+                f"{report.format:14s} {report.max_difference:10.2e} "
+                f"{report.seconds_per_batch * 1000:10.1f}  {status} {report.note}"
+            )
+        print(f"\nwritten to {args.out}/")
+        return 0 if all(r.is_equivalent for r in reports) else 1
 
     if args.command == "climatology":
         from cirrus.data.ingest import IngestSpec as _IngestSpec
