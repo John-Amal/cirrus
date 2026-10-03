@@ -51,6 +51,7 @@ arbitrary quantiles follow in closed form.
 | file | what it is |
 |---|---|
 | `{arm}.pt` | TorchScript predictor, verified bit-identical to the PyTorch original |
+| `{arm}.onnx` | The same model in ONNX, for runtimes without PyTorch |
 | `normalisation.json` | Per-channel statistics from the 1979–2014 training years |
 | `thresholds.json` | Per-cell exceedance thresholds, 2% of 6-hourly steps |
 | `bundle.json` | Which run produced this, and the channel order the model expects |
@@ -79,9 +80,17 @@ def build_bundle(arm: str, out_dir: Path, repo: str) -> dict[str, Any]:
     """Assemble the serving bundle locally and return its manifest."""
     sources = {
         f"{arm}.pt": Path("serve") / f"{arm}.pt",
+        # ONNX too: the deployment image serves it so that torch -- 1.5 GB --
+        # never has to be installed on a 512 MB instance.
+        f"{arm}.onnx": Path("serve") / f"{arm}.onnx",
         "normalisation.json": Path("data/stats/era5_5625_train.json"),
         "thresholds.json": Path("data/stats/thresholds_train.json"),
     }
+    # External ONNX weights, written beside the graph for larger models.
+    external = Path("serve") / f"{arm}.onnx.data"
+    if external.exists():
+        sources[external.name] = external
+
     missing = [str(path) for path in sources.values() if not path.exists()]
     if missing:
         raise SystemExit(

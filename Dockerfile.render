@@ -1,0 +1,63 @@
+# Deployment image for Render's free tier: 512 MB RAM, no GPU.
+#
+# The crucial difference from the local Dockerfile is that torch is never
+# installed. The service imports it only to load a TorchScript model, and
+# this image serves ONNX, so onnxruntime replaces roughly 1.5 GB of torch
+# with about 60 MB. That is the difference between fitting in 512 MB
+# comfortably and being killed mid-request.
+#
+# Dependencies are named explicitly with --no-deps because pyproject lists
+# torch as a core requirement -- correct for training, wrong for serving.
+
+FROM python:3.12-slim
+
+ENV PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PYTHONUNBUFFERED=1 \
+    HF_HOME=/tmp/hf
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends git \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# What inference actually needs. No torch, no xarray, no matplotlib.
+RUN pip install \
+    "onnxruntime>=1.18" \
+    "fastapi>=0.110" \
+    "uvicorn>=0.29" \
+    "numpy>=1.26" \
+    "scipy>=1.11" \
+    "pyyaml>=6.0" \
+    "huggingface_hub>=0.24"
+
+# The package itself, without re-resolving its training dependencies.
+RUN pip install --no-deps "cirrus @ git+https://github.com/John-Amal/cirrus"
+
+# Fetch the model at build time, not at startup: a container that starts and
+# then fails to download would report healthy and serve errors.
+RUN python -c "\
+from huggingface_hub import snapshot_download; \
+import shutil, pathlib; \
+src = snapshot_download('John-Amal/cirrus-serving-5625'); \
+dst = pathlib.Path('/app/bundle'); \
+shutil.copytree(src, dst, dirs_exist_ok=True); \
+print(sorted(p.name for p in dst.iterdir()))"
+
+RUN mkdir -p serve data/stats \
+    && cp bundle/*.onnx* serve/ \
+    && cp bundle/normalisation.json data/stats/era5_5625_train.json \
+    && cp bundle/thresholds.json data/stats/thresholds_train.json
+
+COPY configs/ ./configs/
+
+RUN useradd --create-home --uid 10001 cirrus && chown -R cirrus /app /tmp/hf
+USER cirrus
+
+# Render supplies $PORT and expects the service on 0.0.0.0. The shell form is
+# deliberate: the variable has to be expanded at runtime, and exec form would
+# pass it through as a literal.
+ENV PORT=8000
+CMD cirrus serve --arm twcrps_p90 --model serve/twcrps_p90.onnx \
+    --host 0.0.0.0 --port ${PORT}

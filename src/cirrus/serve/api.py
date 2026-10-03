@@ -1,16 +1,22 @@
 """HTTP inference service.
 
-Serves the exported TorchScript predictor. The model returns the parameters
-of a censored shifted gamma per grid cell; this turns those into the things
-a caller actually wants -- an expected value, a quantile, the probability of
+Serves an exported precipitation predictor. The model returns the parameters
+of a censored shifted gamma per grid cell; this turns those into the things a
+caller actually wants -- an expected value, a quantile, the probability of
 exceeding a threshold.
 
-Those are computed **analytically** here. Training needed sample-based CRPS
+Those are computed **analytically**. Training needed sample-based CRPS
 because the incomplete gamma function has no implemented derivative with
 respect to its shape parameter, so a likelihood could not be backpropagated
 through. Inference has no such constraint: there are no gradients, so the
 closed forms are available and exact. The sampling in training was a
 workaround for autograd, not a property of the distribution.
+
+**The runtime is chosen by file extension, and torch is never imported unless
+a TorchScript model is actually loaded.** Everything else here is numpy and
+scipy. That is what lets the deployment image drop torch entirely and fit in
+512 MB of RAM: serving ONNX needs onnxruntime, a fraction of torch's size.
+The two runtimes were verified to agree numerically at export time.
 
 The service takes fields in physical units and normalises them internally
 using the statistics the model was trained with. Requiring callers to
@@ -22,10 +28,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 import numpy as np
-import torch
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 from scipy.stats import gamma as gamma_distribution
@@ -36,6 +41,64 @@ from cirrus.data.thresholds import Thresholds
 from cirrus.data.windows import FORCING_CHANNELS, time_encodings
 
 DEFAULT_QUANTILES = (0.5, 0.9, 0.99)
+
+
+class Predictor(Protocol):
+    """Anything that maps a batch of fields to per-cell parameters."""
+
+    runtime: str
+
+    def predict(self, fields: np.ndarray) -> np.ndarray:
+        """Map ``(B, C, H, W)`` to ``(B, n_parameters, H, W)``."""
+        ...
+
+
+class OnnxPredictor:
+    """ONNX Runtime backend. No torch anywhere in the process."""
+
+    runtime = "onnx"
+
+    def __init__(self, path: str | Path) -> None:
+        import onnxruntime
+
+        self.session = onnxruntime.InferenceSession(
+            str(path), providers=["CPUExecutionProvider"]
+        )
+        self.input_name = self.session.get_inputs()[0].name
+
+    def predict(self, fields: np.ndarray) -> np.ndarray:
+        """Run the session and return the parameter array."""
+        outputs = self.session.run(None, {self.input_name: fields})
+        return np.asarray(outputs[0])
+
+
+class TorchScriptPredictor:
+    """TorchScript backend, for local runs where torch is already installed."""
+
+    runtime = "torchscript"
+
+    def __init__(self, path: str | Path) -> None:
+        import torch
+
+        self.torch = torch
+        self.model = torch.jit.load(str(path))
+        self.model.eval()
+
+    def predict(self, fields: np.ndarray) -> np.ndarray:
+        """Run the module and return the parameter array."""
+        with self.torch.no_grad():
+            tensor = self.torch.from_numpy(np.ascontiguousarray(fields))
+            return np.asarray(self.model(tensor).numpy())
+
+
+def load_predictor(path: str | Path) -> Predictor:
+    """Pick the backend from the file extension."""
+    suffix = Path(path).suffix.lower()
+    if suffix == ".onnx":
+        return OnnxPredictor(path)
+    if suffix in {".pt", ".pth"}:
+        return TorchScriptPredictor(path)
+    raise ValueError(f"unrecognised model format: {path}")
 
 
 class PredictRequest(BaseModel):
@@ -80,21 +143,16 @@ class PredictResponse(BaseModel):
 class ServiceState:
     """Everything loaded once at startup."""
 
-    model: torch.jit.ScriptModule
+    predictor: Predictor
     normaliser: Normaliser
     data_spec: IngestSpec
     thresholds: np.ndarray
     arm: str
 
     @property
-    def dynamic_channels(self) -> tuple[str, ...]:
-        """Names of the per-step dynamic channels, in order."""
-        return self.data_spec.time_channels
-
-    @property
     def channel_order(self) -> list[str]:
         """Channels the caller must supply per timestep, in order."""
-        return [*self.dynamic_channels, *self.data_spec.static_variables]
+        return [*self.data_spec.time_channels, *self.data_spec.static_variables]
 
 
 def load_state(
@@ -108,12 +166,12 @@ def load_state(
     data_spec = IngestSpec.from_yaml(data_config)
     normaliser = Normaliser.load(NormaliseSpec.from_yaml(normalise_config).output)
     thresholds = Thresholds.load(thresholds_path).values
-    model = torch.jit.load(str(model_path))
-    model.eval()
-    return ServiceState(model, normaliser, data_spec, thresholds, arm)
+    return ServiceState(
+        load_predictor(model_path), normaliser, data_spec, thresholds, arm
+    )
 
 
-def build_input(state: ServiceState, request: PredictRequest) -> torch.Tensor:
+def build_input(state: ServiceState, request: PredictRequest) -> np.ndarray:
     """Normalise the caller's fields and append the time encodings.
 
     Mirrors the dataset exactly: dynamic and static channels normalised with
@@ -126,9 +184,7 @@ def build_input(state: ServiceState, request: PredictRequest) -> torch.Tensor:
     if supplied.ndim != 4 or supplied.shape[1] != expected:
         raise HTTPException(
             status_code=422,
-            detail=(
-                f"expected (time, {expected}, lat, lon); got {list(supplied.shape)}"
-            ),
+            detail=f"expected (time, {expected}, lat, lon); got {list(supplied.shape)}",
         )
     if len(request.timestamps) != n_steps:
         raise HTTPException(
@@ -138,7 +194,7 @@ def build_input(state: ServiceState, request: PredictRequest) -> torch.Tensor:
 
     normalised = state.normaliser.subset(state.channel_order).normalise(supplied)
     times = np.array(request.timestamps, dtype="datetime64[ns]")
-    encodings = time_encodings(times)  # (steps, 4)
+    encodings = time_encodings(times)
     height, width = supplied.shape[-2:]
     forcings = np.broadcast_to(
         encodings[:, :, None, None], (n_steps, len(FORCING_CHANNELS), height, width)
@@ -146,7 +202,7 @@ def build_input(state: ServiceState, request: PredictRequest) -> torch.Tensor:
 
     stacked = np.concatenate([normalised, forcings], axis=1)
     folded = stacked.reshape(1, n_steps * stacked.shape[1], height, width)
-    return torch.from_numpy(np.ascontiguousarray(folded, dtype=np.float32))
+    return np.ascontiguousarray(folded, dtype=np.float32)
 
 
 def derive(
@@ -170,10 +226,10 @@ def derive(
     )
     exceedance = frozen.sf(limit - shift)
 
-    # The censored mean is not shape*scale: everything below zero is piled at
-    # zero. Integrating the positive part gives the expression below. Note the
-    # first term needs shape+1, so it cannot use the frozen distribution --
-    # a frozen scipy distribution will not accept new parameters.
+    # The censored mean is not shape*scale: everything the shift pushes below
+    # zero piles up at zero. The first term needs shape+1, so it cannot use
+    # the frozen distribution -- a frozen scipy distribution will not accept
+    # new parameters.
     mean = shape * scale * gamma_distribution.sf(
         -shift, a=shape + 1, scale=scale
     ) + shift * frozen.sf(-shift)
@@ -203,13 +259,14 @@ def create_app(state: ServiceState) -> FastAPI:
     @app.get("/health")
     def health() -> dict[str, str]:
         """Report that the service is up."""
-        return {"status": "ok", "arm": state.arm}
+        return {"status": "ok", "arm": state.arm, "runtime": state.predictor.runtime}
 
     @app.get("/info")
     def info() -> dict[str, Any]:
         """Describe the inputs the model expects and what it returns."""
         return {
             "arm": state.arm,
+            "runtime": state.predictor.runtime,
             "grid": list(state.thresholds.shape),
             "channels_per_step": state.channel_order,
             "forcing_channels": list(FORCING_CHANNELS),
@@ -229,10 +286,7 @@ def create_app(state: ServiceState) -> FastAPI:
         if not all(0.0 < q < 1.0 for q in request.quantiles):
             raise HTTPException(status_code=422, detail="quantiles must be in (0, 1)")
 
-        tensor = build_input(state, request)
-        with torch.no_grad():
-            parameters = state.model(tensor)[0].numpy()
-
+        parameters = state.predictor.predict(build_input(state, request))[0]
         derived = derive(
             parameters, state.thresholds, request.quantiles, request.threshold_mm
         )
