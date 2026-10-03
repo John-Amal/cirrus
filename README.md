@@ -113,7 +113,7 @@ find that AI weather models underestimate both the frequency and intensity of
 record-breaking events, and ECMWF attributes AIFS's under-prediction of heavy
 precipitation partly to smoothing from its MSE loss. Work adapting foundation
 models for extremes mostly still trains with bulk losses. `cirrus` tests
-whether an extreme-value-informed objective changes that, at a scale where
+whether the training objective changes that, at a scale where
 the experiment can actually be run.
 
 ## Quickstart
@@ -233,14 +233,13 @@ Design decisions and negative results, including the bugs, are recorded in
 
 ERA5 reanalysis via [WeatherBench 2](https://weatherbench2.readthedocs.io/),
 conservatively regridded to 64×32. Contains modified Copernicus Climate
-Change Service information (1979–2014); neither the European Commission nor
+Change Service information (1979–2022); neither the European Commission nor
 ECMWF is responsible for any use of it.
 
 ## Related work by the author
 
-- [Climate Risk Explorer](https://github.com/John-Amal) — end-to-end Swiss
-  climate risk pipeline and dashboard.
-- `catagg` — open-source catastrophe loss aggregation (ELT to OEP/AEP curves).
+- [Climate Risk Explorer](https://github.com/John-Amal/climate-risk-explorer) —
+  end-to-end Swiss climate risk pipeline and dashboard.
 
 ## Licence
 
