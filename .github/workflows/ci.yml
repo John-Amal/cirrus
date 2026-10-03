@@ -27,7 +27,9 @@ jobs:
         run: pip install torch --index-url https://download.pytorch.org/whl/cpu
 
       - name: Install package
-        run: pip install -e ".[dev]"
+        # serve too: without it mypy cannot see fastapi, pydantic or uvicorn,
+        # and would skip type-checking the API rather than report that.
+        run: pip install -e ".[dev,serve]"
 
       - name: Lint
         run: |
@@ -42,6 +44,3 @@ jobs:
 
       - name: Test
         run: pytest
-
-      - name: Install package
-        run: pip install -e ".[dev,serve]"
