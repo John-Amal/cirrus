@@ -6,9 +6,10 @@ thing the large ones get wrong: **the tail**.
 [![ci](https://github.com/John-Amal/cirrus/actions/workflows/ci.yml/badge.svg)](https://github.com/John-Amal/cirrus/actions/workflows/ci.yml)
 [![weights](https://img.shields.io/badge/%F0%9F%A4%97%20weights-cirrus--mae--5625-blue)](https://huggingface.co/John-Amal/cirrus-mae-5625)
 
-> **Status: Phase 4 complete.** A 5M-parameter ViT pretrained on 36 years of
-> ERA5, precipitation heads fine-tuned on it to compare training objectives,
-> and return levels evaluated on held-out years. Weights are on the
+> **Status: Phase 4 complete, Phase 5 in progress.** A 5M-parameter ViT
+> pretrained on 36 years of ERA5, precipitation heads fine-tuned on it to
+> compare training objectives, return levels evaluated on held-out years, and
+> the result served as a containerised API. Weights are on the
 > [Hugging Face Hub](https://huggingface.co/John-Amal/cirrus-mae-5625).
 
 ![objective comparison](docs/objective_comparison.png)
@@ -120,7 +121,7 @@ the experiment can actually be run.
 ```bash
 git clone https://github.com/John-Amal/cirrus.git && cd cirrus
 python -m venv .venv && source .venv/bin/activate
-pip install -e ".[dev]"
+pip install -e ".[dev]"          # add ,serve for the inference API
 
 cirrus device                                    # cuda -> mps -> cpu
 cirrus ingest --config configs/data/era5_5625.yaml --dry-run
@@ -146,9 +147,44 @@ cirrus inspect   # per-variable scores and the reconstruction figure
 | `models/attention` | Multi-head attention written out, tested against PyTorch's fused version |
 | `models/mae` | 75% masking, lightweight decoder, latitude-weighted loss on hidden patches only |
 | `eval/reconstruction` | Per-variable scores and the tail-amplitude diagnostic |
+| `eval/gpd` | Peaks-over-threshold fits, return levels, block bootstrap |
+| `serve/export` | TorchScript and ONNX export, with equivalence checking |
+| `serve/api` | FastAPI service returning analytic distribution quantities |
 
 At 5.625° the grid is 32×64, so 4×4 patches give 128 tokens — small enough
 for full attention and for a laptop.
+
+## Serving
+
+The trained model exports to TorchScript and ONNX, and runs behind an HTTP
+API that returns a **predictive distribution** per grid cell rather than a
+single number — which is the project's argument expressed as an interface.
+
+```bash
+cirrus export --arm twcrps_p90        # TorchScript, verified bit-identical
+cirrus serve                          # http://127.0.0.1:8000/docs
+
+docker build -t cirrus . && docker run -p 8000:8000 cirrus
+```
+
+`/predict` takes fields in physical units and timestamps, normalises them
+with the statistics the model was trained on, and returns the censored
+shifted gamma parameters per cell plus the quantities derived from them:
+expected rainfall, probability of rain, exceedance probability against each
+cell's climatological threshold, and arbitrary quantiles.
+
+Those are computed in closed form. Training needed sample-based CRPS because
+the incomplete gamma function has no implemented derivative with respect to
+its shape parameter; inference has no gradients, so the exact expressions are
+available. The sampling was a workaround for autograd, not a property of the
+distribution.
+
+Two measurements rather than assumptions. TorchScript reproduces PyTorch
+**bit-identically** (max difference 0.00e+00) at 9.9 ms per forward pass on
+CPU. Dynamic int8 quantisation was tried and **rejected**: it is both less
+accurate (max difference 2.1e-01, against a shape parameter of order 0.02)
+and slower (11.1 ms). At 5M parameters over 128 tokens the matrix
+multiplications are too small for int8 to pay for its own overhead.
 
 ## Roadmap
 
@@ -159,11 +195,23 @@ for full attention and for a laptop.
 | 2 | Masked-autoencoder pretraining, published weights | done |
 | 3 | Extremes head, four objectives compared across seeds | done |
 | 4 | GPD return levels on held-out years, shape-parameter robustness | done |
-| 5 | Export, serving, LLM agent interface | |
+| 5 | Export, containerised inference API | in progress |
+| 6 | Out-of-distribution evaluation on warm-climate storylines | next |
 
-Still open: NWP and climatology baselines, and out-of-distribution
-evaluation on warm-climate storyline simulations, which tests whether a
-model trained on the historical record can represent intensified extremes.
+Phase 5 has export and serving; an LLM agent over the model and its
+evaluation code is outstanding.
+
+**Next is the question this project builds toward.** Deterministic training
+implies a bounded tail *in the historical climate*. Whether a model trained
+on that record can represent intensified extremes is a different question,
+and it needs data from outside the record: kilometre-scale storyline
+simulations under warming, coarsened to this grid. Those are used strictly as
+a held-out test set — training on them would contaminate the only evaluation
+that answers the question.
+
+Still open besides: an NWP baseline. Persistence and climatology are in, and
+every trained arm beats both, but nothing here has been compared against an
+operational forecast.
 
 ## Development
 
