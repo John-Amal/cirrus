@@ -17,6 +17,8 @@ build/
 *.nc
 *.pt
 *.ckpt
+*.onnx
+*.onnx.data
 
 wandb/
 .DS_Store
