@@ -30,6 +30,8 @@ RUN pip install \
     "numpy>=1.26" \
     "scipy>=1.11" \
     "pyyaml>=6.0" \
+    "xarray>=2024.6" \
+    "zarr>=2.18" \
     "huggingface_hub>=0.24"
 
 # The package itself, without re-resolving its training dependencies.
