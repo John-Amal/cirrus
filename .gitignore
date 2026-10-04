@@ -25,5 +25,5 @@ wandb/
 .ipynb_checkpoints/
 release/
 runs/
-serve/
-serve/
+/serve/
+/serve/
