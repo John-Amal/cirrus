@@ -5,12 +5,15 @@ thing the large ones get wrong: **the tail**.
 
 [![ci](https://github.com/John-Amal/cirrus/actions/workflows/ci.yml/badge.svg)](https://github.com/John-Amal/cirrus/actions/workflows/ci.yml)
 [![weights](https://img.shields.io/badge/%F0%9F%A4%97%20weights-cirrus--mae--5625-blue)](https://huggingface.co/John-Amal/cirrus-mae-5625)
+[![demo](https://img.shields.io/badge/demo-live-brightgreen)](https://cirrus-3s24.onrender.com/docs)
 
-> **Status: Phase 4 complete, Phase 5 in progress.** A 5M-parameter ViT
-> pretrained on 36 years of ERA5, precipitation heads fine-tuned on it to
-> compare training objectives, return levels evaluated on held-out years, and
-> the result served as a containerised API. Weights are on the
-> [Hugging Face Hub](https://huggingface.co/John-Amal/cirrus-mae-5625).
+> **Status: Phases 0–5 complete.** A 5M-parameter ViT pretrained on 36 years
+> of ERA5, precipitation heads fine-tuned on it to compare training
+> objectives, return levels evaluated on held-out years, and the result
+> running as a public API.
+> [Weights](https://huggingface.co/John-Amal/cirrus-mae-5625) ·
+> [live service](https://cirrus-3s24.onrender.com/docs) ·
+> [plain-language explanation](docs/explained.md)
 
 ![objective comparison](docs/objective_comparison.png)
 
@@ -160,6 +163,13 @@ The trained model exports to TorchScript and ONNX, and runs behind an HTTP
 API that returns a **predictive distribution** per grid cell rather than a
 single number — which is the project's argument expressed as an interface.
 
+A live instance runs at
+[cirrus-3s24.onrender.com/docs](https://cirrus-3s24.onrender.com/docs). It is
+a free instance that sleeps when idle, so the first request may take a minute
+to wake it.
+
+![API](docs/api.png)
+
 ```bash
 cirrus export --arm twcrps_p90        # TorchScript, verified bit-identical
 cirrus serve                          # http://127.0.0.1:8000/docs
@@ -186,6 +196,20 @@ accurate (max difference 2.1e-01, against a shape parameter of order 0.02)
 and slower (11.1 ms). At 5M parameters over 128 tokens the matrix
 multiplications are too small for int8 to pay for its own overhead.
 
+The deployed image serves ONNX rather than TorchScript, so torch is never
+installed and the service fits in 512 MB. How it is built, and the four
+deployment failures that shaped it, are in
+[`docs/deployment.md`](docs/deployment.md).
+
+### What it does not do
+
+One variable, one step: the precipitation distribution six hours ahead, from
+two input states. It is not an autoregressive forecaster — predicting the
+full atmospheric state and rolling it forward would need a different head,
+and at this resolution would be a weaker version of what GraphCast already
+does. Grid cells are ~600 km across, so these are regional quantities, not
+station values.
+
 ## Roadmap
 
 | Phase | Content | Status |
@@ -195,11 +219,8 @@ multiplications are too small for int8 to pay for its own overhead.
 | 2 | Masked-autoencoder pretraining, published weights | done |
 | 3 | Extremes head, four objectives compared across seeds | done |
 | 4 | GPD return levels on held-out years, shape-parameter robustness | done |
-| 5 | Export, containerised inference API | in progress |
+| 5 | Export, containerised inference API, public deployment | done |
 | 6 | Out-of-distribution evaluation on warm-climate storylines | next |
-
-Phase 5 has export and serving; an LLM agent over the model and its
-evaluation code is outstanding.
 
 **Next is the question this project builds toward.** Deterministic training
 implies a bounded tail *in the historical climate*. Whether a model trained
@@ -209,9 +230,22 @@ simulations under warming, coarsened to this grid. Those are used strictly as
 a held-out test set — training on them would contaminate the only evaluation
 that answers the question.
 
-Still open besides: an NWP baseline. Persistence and climatology are in, and
-every trained arm beats both, but nothing here has been compared against an
-operational forecast.
+Also open: an NWP baseline — persistence and climatology are in and every
+trained arm beats both, but nothing here has been compared against an
+operational forecast. And porting the objective comparison to an open
+production backbone such as Aurora, which is what would show whether the
+finding holds at operational resolution rather than at 5.625°.
+
+## Documentation
+
+| Document | What it covers |
+|---|---|
+| [`docs/explained.md`](docs/explained.md) | The whole project in plain language, no background assumed |
+| [`docs/results/phase3.md`](docs/results/phase3.md) | Objective comparison: six arms, seeds, what each metric says |
+| [`docs/results/phase4.md`](docs/results/phase4.md) | Return levels, shape robustness, baselines, trend check |
+| [`docs/deployment.md`](docs/deployment.md) | Export, serving, the deployment constraints and failures |
+| [`docs/experiments.md`](docs/experiments.md) | Dated log of what was tried, including the bugs |
+| [`docs/MODEL_CARD.md`](docs/MODEL_CARD.md) | The published encoder: training, limits, attribution |
 
 ## Development
 
