@@ -29,6 +29,14 @@ It has since been used as a frozen encoder for the study summarised under
 that models trained with squared error imply a precipitation distribution
 with a finite upper bound.
 
+**Related:** the precipitation head trained on this encoder is packaged for
+inference in
+[cirrus-serving-5625](https://huggingface.co/John-Amal/cirrus-serving-5625),
+and runs as a live API at
+[cirrus-3s24.onrender.com/docs](https://cirrus-3s24.onrender.com/docs). This
+repository holds the *encoder* — the representation — rather than anything
+that forecasts on its own.
+
 ![reconstruction](reconstruction.png)
 
 ## What it is
@@ -142,7 +150,10 @@ what makes the comparison attributable to the objective.
 ## Intended use
 
 - A pretrained encoder to fine-tune for downstream tasks on coarse-resolution
-  global fields; the study above is a worked example, with the code public.
+  global fields. The study above is a worked example with public code, and
+  the resulting head is
+  [deployed as an API](https://cirrus-3s24.onrender.com/docs) if you would
+  rather see the output than train anything.
 - A reproducible baseline for studying how training objectives affect the
   representation of extremes.
 - Teaching and experimentation: the whole pipeline trains in hours on a
@@ -197,6 +208,12 @@ tokens = backbone(fields)  # (batch, 128, 256)
 Inputs must be normalised with the same statistics used in training; they are
 produced by `cirrus stats` and the channel order is recorded in
 `state["input_channels"]`.
+
+For **inference** rather than fine-tuning, use
+[cirrus-serving-5625](https://huggingface.co/John-Amal/cirrus-serving-5625)
+instead: it bundles a trained precipitation head in TorchScript and ONNX
+together with the statistics and thresholds it needs, which this repository
+does not include.
 
 ## Reproducing
 
